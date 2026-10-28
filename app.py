@@ -98,7 +98,8 @@ def init_db():
   CREATE TABLE IF NOT EXISTS logs(id INTEGER PRIMARY KEY AUTOINCREMENT,level TEXT NOT NULL,message TEXT NOT NULL,created_at TEXT NOT NULL);
   ''')
   defaults={'autopilot':'false','last_cycle':'','mission':"Build a privacy-first, evidence-driven digital product company. Continuously discover urgent and expensive problems, validate willingness to pay, prioritize reachable customers and recurring value, build and test useful prototypes, measure outcomes, learn from failures, and improve the next cycle. Target ₹1 crore monthly revenue as an ambition, never as a guarantee. Do not spend money, publish publicly, contact people, enter contracts, or change production systems without explicit approval.",'workspace':'workspace'}
-  for k,v in defaults.items(): c.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)',(k,v))\n  c.execute('UPDATE settings SET value=? WHERE key=? AND value=?',(defaults['mission'],'mission',${JSON.stringify(oldMission)}))
+  for k,v in defaults.items(): c.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)',(k,v))
+  c.execute('UPDATE settings SET value=? WHERE key=? AND value=?',(defaults['mission'],'mission','Operate as a privacy-first digital product company: discover useful problems, build and review prototypes, and deliver customer outcomes.'))
  pathlib.Path(get_setting('workspace','workspace')).mkdir(parents=True,exist_ok=True)
 
 def require_admin(key):
