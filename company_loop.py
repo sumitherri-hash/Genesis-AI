@@ -32,6 +32,10 @@ def _init():
           evidence TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_company_memory_created ON company_memory(created_at DESC);
+        CREATE TABLE IF NOT EXISTS company_followups(
+          day TEXT PRIMARY KEY, source_task_id TEXT NOT NULL, followup_task_id TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
         """)
     core.log("Company learning loop database initialized")
 
@@ -151,6 +155,42 @@ def _review(task_id):
                           (str(uuid.uuid4()), task_id, lesson, evidence, core.now()))
             # Keep bounded memory, never grow forever.
             c.execute("DELETE FROM company_memory WHERE id NOT IN (SELECT id FROM company_memory ORDER BY created_at DESC LIMIT 100)")
+        # Bounded autonomous execution: at most one safe internal follow-up per day,
+        # only when autopilot is on, confidence is not low, and the source is not itself auto-generated.
+        title = str(task["title"] or "")
+        if (core.get_setting("autopilot", "false").lower() == "true"
+                and not title.startswith("[AUTO]")
+                and result.get("decision") in ("proceed", "validate")
+                and result["opportunity_score"] >= 65
+                and str(result.get("confidence", "low")).lower() in ("medium", "high")
+                and str(next_step.get("type", "")) in ("research", "prototype", "validation", "operations")):
+            day = date.today().isoformat()
+            with core.db() as c:
+                exists = c.execute("SELECT 1 FROM company_followups WHERE day=?", (day,)).fetchone()
+            if not exists:
+                follow_title = "[AUTO] " + str(next_step.get("title", "Validate opportunity"))[:180]
+                follow_description = (
+                    "Autonomous internal follow-up generated from task " + task_id + ". "
+                    "This is bounded internal research/prototyping only; do not publish, contact customers, "
+                    "spend money, create accounts, or modify production systems.\n\n"
+                    + str(next_step.get("description", ""))[:3000]
+                    + "\n\nOriginal evidence-aware review: " + json.dumps(result, ensure_ascii=False)[:3000]
+                )
+                follow_id = core.create_task(follow_title, follow_description, "builder")
+                try:
+                    import agent_council
+                    agent_council.enqueue_task(follow_id, follow_title, follow_description)
+                except Exception as queue_error:
+                    core.log("Follow-up task created but council queueing failed: " + str(queue_error), "WARN")
+                with core.db() as c:
+                    c.execute("INSERT OR IGNORE INTO company_followups(day,source_task_id,followup_task_id,created_at) VALUES(?,?,?,?)",
+                              (day, task_id, follow_id, core.now()))
+                result["automatic_followup"] = {"task_id": follow_id, "title": follow_title, "mode": "internal_only", "daily_limit": 1}
+                encoded = json.dumps(result, ensure_ascii=False)[:18000]
+                with core.db() as c:
+                    c.execute("UPDATE company_reviews SET review_json=?,updated_at=? WHERE task_id=?",
+                              (encoded, core.now(), task_id))
+                core.log("Company loop autonomously queued one bounded internal follow-up: " + follow_id)
         core.log(f"Company loop synthesized 12-agent review for task {task_id}")
     except Exception as exc:
         with core.db() as c:
