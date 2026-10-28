@@ -1,37 +1,59 @@
-# GENESIS AI v0.8 — Company workflow + narrated MP4 prototype
+# GENESIS AI — 12-agent backend council
 
-GENESIS is a customer-facing digital-product prototype with a private virtual-company workflow and an optional narrated 720p MP4 renderer for study lessons.
+GENESIS is a prototype digital-product company backend. It now includes 12 distinct role workers, each with its own worker thread, queue jobs, status, retry handling, stored output, and role-specific prompt.
 
-## New in v0.8
-- Generates a narrated H.264/AAC 1280×720 MP4 from AI-created lesson scenes using Edge TTS and the bundled FFmpeg binary.
-- Creates a matching interactive lesson, recap, and quiz.
-- Runs technical validation that checks for video and audio streams; this is not proof of factual accuracy or educational effectiveness.
-- Adds a private internal company department map (research, product, engineering, creative, QA, sales, business model, security, operations).
-- Customer-facing UI stays separate from internal departments and admin routes.
-- MP4 download is served from a path-confined workspace endpoint.
+## The 12 independent agents
 
-## Requirements and limits
-- A valid compatible AI provider API key is required for generation. Edge TTS needs outbound network access. If narration or rendering fails, the task reports a failure rather than falsely claiming an MP4 was created.
-- Rendering many scenes may take minutes and consume CPU; it is not instantaneous.
-- The department heads and specialist roles are AI role prompts, not actual employees, licensed doctors, or professional engineers. High-stakes work needs qualified human review.
-- GENESIS can investigate market signals and create business hypotheses, but it cannot guarantee profit or autonomously make money without a real product, customers, payment and legal/tax setup, and human approval for financial commitments.
-- Autopilot runs only while the service is awake. Render free hosting does not guarantee 24/7 availability. Reliable operation needs an always-on worker, durable storage/queue, monitoring, and budget.
-- No access to personal phone data is required. The backend receives the submitted request and standard web metadata only.
-- The public task limiter is in-memory and intended only as a prototype safeguard. Production requires durable queues, shared rate limiting, authentication, cost controls, and monitoring.
+1. Signal Scout — problem signals and evidence gaps
+2. Research Analyst — evidence quality and alternatives
+3. Customer Voice — user segments and interview questions
+4. Product Strategist — product hypothesis and smallest test
+5. Systems Architect — technical architecture
+6. Prototype Builder — bounded implementation plan
+7. Quality Engineer — acceptance criteria and tests
+8. Security and Privacy — threats, abuse, data minimization
+9. Experience Designer — usability and accessibility
+10. Growth Researcher — ethical acquisition experiments
+11. Unit Economics Analyst — cost and pricing hypotheses
+12. Operations and Learning — reliability, metrics, improvement loop
 
-## Deploy on Render
-1. Back up your current private repository.
-2. Replace its root project files with the contents of this ZIP (keep `app.py`, `requirements.txt`, and `render.yaml` at repository root).
-3. Commit and let your existing Render service deploy the commit.
-4. In Render environment variables, configure a valid `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and a strong `GENESIS_ADMIN_KEY`. Never commit secrets to GitHub.
-5. Test `/api/health`, then request a short study video. Check task status and download the MP4 when completed.
-6. If Render's native Python build fails to install or run the bundled video dependencies, use the included Dockerfile by switching the service to Docker deployment; don't create a second service until the current one is backed up.
+The workers run on the backend, not in the browser. They can independently analyze a task and store separate outputs. This is a first multi-agent runtime, not 12 human-equivalent employees or a general AI that can do anything on a phone. The agents use the configured language-model API; they do not have unrestricted access to personal devices, third-party accounts, payment systems, or the public internet. Public posting, outbound messages, purchases, contracts, account creation, and destructive changes remain approval-gated.
 
-## Local run
-```bash
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
+## Local setup (without Render)
 
-## Video quality scope
-The renderer creates designed title/scene cards with spoken narration, not generative cinematic footage. It is a first working MP4 pipeline. It does not automatically source copyrighted YouTube videos, guarantee a voice/music license, or prove a lesson's factual correctness. More advanced visual generation, transitions, music licensing, and independent subject-matter review are future integrations.
+Requirements: Python 3.11+, internet, and a compatible AI-provider API key with available quota.
+
+1. Clone/download this repository to a computer that can remain on.
+2. Copy `.env.example` to `.env` and fill in `LLM_API_KEY` and a long random `GENESIS_ADMIN_KEY`.
+3. Run `run_local.bat` on Windows or `sh run_local.sh` on macOS/Linux.
+4. Open `http://127.0.0.1:8000` for the public app and `http://127.0.0.1:8000/console` for the admin console.
+5. In the console, enter the admin key, queue a task, and inspect worker status and outputs.
+
+Do not commit `.env`; it contains secrets. Do not expose the local admin console to the internet without proper authentication, TLS, firewalling, and production hardening.
+
+## Autonomy and operating controls
+
+- The existing app worker and the 12-agent council start in the backend when the FastAPI service starts.
+- The council watches recent tasks and queues one job per agent. It also schedules a mission-planning pulse when autopilot is enabled.
+- `COUNCIL_MAX_DAILY_CALLS=36` caps provider-call attempts per day across the council. Adjust cautiously; higher limits can increase costs. Failed attempts count toward the cap.
+- `COUNCIL_MISSION_INTERVAL_SECONDS=21600` means a six-hour planning interval. `COUNCIL_POLL_SECONDS=15` controls queue polling.
+- The existing `/api/internal/council` endpoint reports worker liveness, queue counts, daily usage, and recent outputs. It requires `X-Genesis-Key`.
+- `/api/internal/council/run` queues the 12 specialist jobs for an existing task.
+- AI outputs can be wrong. Generated code is not automatically executed by the council. Review results and run tests in an isolated environment before deployment.
+- API provider quota and uptime are real constraints. A missing key, exhausted quota, lost internet, or powered-off host stops useful work; agents cannot magically bypass those conditions.
+
+## What 24/7 actually requires
+
+The software can work without the dashboard open, but a process cannot run after its host is shut down or suspended. For continuous operation, use a computer/server that stays powered on with reliable internet, configure restart-on-failure, backups, monitoring, and persistent storage. A phone is not a reliable always-on production host. Local mode is accessible only on that computer by default. Hosting publicly requires a secure deployment and usually some ongoing cost.
+
+## Revenue target
+
+₹1 crore per month is an ambitious business goal, not a predictable output of adding agents. Revenue requires a useful product, distribution, paying customers, retention, margins, and legal/tax handling. GENESIS can help test product hypotheses and produce prototypes; it cannot guarantee income.
+
+## Security
+
+- Never commit `.env` or API keys.
+- Use a long, unique admin key.
+- Keep the local server bound to `127.0.0.1` unless you understand the security implications.
+- Do not enable unrestricted shell execution, auto-spending, or automatic outbound messaging.
+- Back up `genesis.db` and the workspace. SQLite/local workspace files persist only where the host's disk persists.
