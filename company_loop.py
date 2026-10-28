@@ -37,7 +37,6 @@ def _init():
           created_at TEXT NOT NULL
         );
         """)
-    core.log("Company learning loop database initialized")
 
 
 def _reserve_call():
