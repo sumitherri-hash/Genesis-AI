@@ -142,11 +142,20 @@ def _reserve_call():
 
 def enqueue_task(task_id, task_title, task_description):
     _init()
+    past_lessons = []
+    try:
+        with core.db() as c:
+            past_lessons = [dict(r) for r in c.execute(
+                "SELECT lesson,evidence FROM company_memory ORDER BY created_at DESC LIMIT 5"
+            )]
+    except Exception:
+        pass
     context = {
         "task_id": task_id,
         "title": str(task_title)[:200],
         "description": str(task_description)[:4000],
         "mission": core.get_setting("mission", ""),
+        "reusable_lessons_from_previous_cycles": past_lessons,
         "guardrails": [
             "Treat claims as hypotheses unless evidence is supplied.",
             "Do not request secrets or personal data.",
