@@ -187,6 +187,12 @@ def _claim(agent_id):
 
 
 def _run_job(agent, job):
+    if not core.LLM_API_KEY:
+        with core.db() as c:
+            c.execute("UPDATE council_jobs SET status='failed',error=?,updated_at=? WHERE id=?",
+                      ("LLM_API_KEY is not configured; add a valid provider key before retrying.", core.now(), job["id"]))
+        core.log("Council job blocked because LLM_API_KEY is missing", "WARN")
+        return
     if not _reserve_call():
         with core.db() as c:
             c.execute("UPDATE council_jobs SET status='paused_budget',error=?,updated_at=? WHERE id=?",
