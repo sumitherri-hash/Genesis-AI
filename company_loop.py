@@ -130,7 +130,11 @@ def _review(task_id):
         result["task_id"] = task_id
         result["specialists_completed"] = sum(1 for r in rows if r["status"] == "completed")
         result["specialists_failed"] = sum(1 for r in rows if r["status"] == "failed")
-        result["next_step"]["approval_required"] = True
+        next_step = result.get("next_step")
+        if not isinstance(next_step, dict):
+            next_step = {"title": "Validate the strongest hypothesis", "description": "Collect independent evidence before investing significant time or money.", "type": "validation"}
+        next_step["approval_required"] = True
+        result["next_step"] = next_step
         encoded = json.dumps(result, ensure_ascii=False)[:18000]
         lesson = str(result.get("improvement_lesson", "")).strip()[:1200]
         evidence = json.dumps({
