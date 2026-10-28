@@ -1,0 +1,15 @@
+{
+  "id": "/console",
+  "name": "GENESIS AI Command Center",
+  "short_name": "GENESIS",
+  "description": "Cross-device command center for GENESIS AI agents and company workflows.",
+  "start_url": "/console",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}
