@@ -10,10 +10,10 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: LLM_BASE_URL
-        value: https://api.openai.com/v1
+        value: https://generativelanguage.googleapis.com/v1beta/openai
       - key: LLM_MODEL
-        value: gpt-4o-mini
-      - key: LLM_API_KEY
+        value: gemini-3.8-flash
+      - key: GEMINI_API_KEY
         sync: false
       - key: GENESIS_ADMIN_KEY
         generateValue: true
