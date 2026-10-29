@@ -108,10 +108,36 @@ def require_admin(key):
  if not key or key != ADMIN_KEY:
   raise HTTPException(401,'Missing or invalid GENESIS admin key')
 def llm(messages,temperature=.2):
- if not LLM_API_KEY: raise RuntimeError('LLM_API_KEY is not configured in the hosting environment.')
- r=requests.post(LLM_BASE_URL+'/chat/completions',headers={'Authorization':'Bearer '+LLM_API_KEY,'Content-Type':'application/json'},json={'model':LLM_MODEL,'messages':messages,'temperature':temperature},timeout=90)
- r.raise_for_status()
- return r.json()['choices'][0]['message']['content']
+ if not LLM_API_KEY:
+  raise RuntimeError('AI provider is not configured. Add a valid LLM_API_KEY in Render Environment Variables.')
+ url=LLM_BASE_URL+'/chat/completions'
+ last_error=None
+ for attempt in range(3):
+  try:
+   r=requests.post(url,headers={'Authorization':'Bearer '+LLM_API_KEY,'Content-Type':'application/json'},json={'model':LLM_MODEL,'messages':messages,'temperature':temperature},timeout=90)
+   if r.status_code == 409 or r.status_code == 429 or r.status_code >= 500:
+    detail=(r.text or '')[:500]
+    last_error=RuntimeError(f'AI provider returned HTTP {r.status_code}. '+('Conflict: retrying the request; if it persists, verify LLM_BASE_URL, LLM_MODEL, and provider status. ' if r.status_code==409 else 'Temporary provider/rate-limit issue. ') + detail)
+    if attempt < 2:
+     time.sleep(1.5*(attempt+1))
+     continue
+    raise last_error
+   if not r.ok:
+    detail=(r.text or '')[:500]
+    raise RuntimeError(f'AI provider returned HTTP {r.status_code}: {detail}')
+   data=r.json()
+   choices=data.get('choices') or []
+   if not choices or not choices[0].get('message',{}).get('content'):
+    raise RuntimeError('AI provider returned an empty response. Check the configured model and API compatibility.')
+   return choices[0]['message']['content']
+  except (requests.Timeout,requests.ConnectionError) as e:
+   last_error=RuntimeError('AI provider connection timed out or failed. Check provider availability and try again.')
+   if attempt < 2:
+    time.sleep(1.5*(attempt+1))
+    continue
+   raise last_error from e
+ if last_error: raise last_error
+ raise RuntimeError('AI request failed unexpectedly.')
 def parse_json(s):
  s=re.sub(r'^```(?:json)?\s*|\s*```$','',s.strip(),flags=re.I)
  try: return json.loads(s)
@@ -167,35 +193,57 @@ def strategize():
 
 def slugify(s): return re.sub(r'[^a-z0-9]+','-',s.lower()).strip('-')[:48] or 'genesis-project'
 def build(task):
- workspace=pathlib.Path(get_setting('workspace','workspace')).resolve(); workspace.mkdir(parents=True,exist_ok=True)
- dest=(workspace/slugify(task['title'])).resolve()
- if workspace not in dest.parents: raise RuntimeError('Unsafe project path')
- dest.mkdir(parents=True,exist_ok=True)
- prompt=f'''Create a real minimal software prototype for this task. Return JSON only: {{"files":[{{"path":"relative/path","content":"complete text file"}}],"summary":"...","tests":["..."]}}. Rules: max 8 files, each <=10000 chars; text files only; no absolute paths or ..; no secrets, malware, tracking, exploit code, hidden network behavior, destructive commands or shell scripts. Prefer self-contained HTML/CSS/JS or a small Python app. Do not claim tests were run. TASK: {task['description']}'''
- out=parse_json(llm([{'role':'system','content':'You are an internal engineering team: senior software engineer, test engineer, accessibility reviewer, and privacy/security reviewer. Produce a safe minimal prototype and flag limitations. These are simulated AI perspectives, not human professionals. Return safe, runnable prototype files as JSON only.'},{'role':'user','content':prompt}],.15))
+ workspace=pathlib.Path(get_setting('workspace','workspace')).resolve()
+ workspace.mkdir(parents=True,exist_ok=True)
+ prompt=f'''Complete the user's actual request, not just a software-building interpretation. Infer the best deliverable from the message:
+- For a question or explanation, answer it directly and clearly.
+- For writing, create the requested text.
+- For planning, analysis, research, or brainstorming, provide useful structured output and clearly label assumptions/evidence limits.
+- For code, a website, app, or other digital product, create a working minimal prototype and files.
+- For study-video/lesson requests, the dedicated lesson generator handles those.
+Return valid JSON only with keys: kind (answer|writing|plan|research|analysis|software|other), title, answer (complete useful response in text), summary (short result summary), files (array of {{path,content}}; may be empty for text-only requests), tests (array), limitations (array).
+Rules: do not ask follow-up questions unless essential; make sensible safe assumptions. If the user requests files, create up to 8 text files, each <=10000 chars. File paths must be relative and must not contain .. or be absolute. No secrets, malware, exploit code, hidden tracking/network behavior, destructive commands, shell scripts, or unsafe execution. Do not claim external research, tests, messages, purchases, or deployments occurred unless actually performed. If the request requires an external account, access, payment, physical-world action, or unavailable integration, explain the limitation and still complete the useful portion. For medical/legal/financial high-impact topics, provide general information and appropriate cautions. User request title: {task['title']}\nFull request: {task['description']}'''
+ out=parse_json(llm([{'role':'system','content':'You are GENESIS, a reliable general-purpose task executor. You must understand and fulfil the specific user intent. You can answer questions, draft text, make plans, analyse supplied information, and generate safe digital prototypes. Be useful, honest about limits, concise but complete. Return valid JSON only.'},{'role':'user','content':prompt}],.15))
+ answer=str(out.get('answer','')).strip()
+ summary=str(out.get('summary','')).strip() or answer[:500]
  created=[]
- for item in out.get('files',[])[:8]:
-  rel=pathlib.PurePosixPath(str(item.get('path','')))
-  if not rel.parts or rel.is_absolute() or '..' in rel.parts: continue
-  target=(dest/pathlib.Path(*rel.parts)).resolve()
-  if dest not in target.parents: continue
-  content=str(item.get('content',''))[:10000]
-  target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content,encoding='utf-8')
-  created.append(str(target.relative_to(workspace)))
- if not created: raise RuntimeError('No safe project files returned')
+ files=out.get('files') if isinstance(out.get('files'),list) else []
+ # Text-only tasks are valid completed work and do not need artificial project files.
+ if files:
+  dest=(workspace/slugify(str(out.get('title') or task['title'])+'-'+task['id'][:8])).resolve()
+  if workspace not in dest.parents: raise RuntimeError('Unsafe project path')
+  dest.mkdir(parents=True,exist_ok=True)
+  for item in files[:8]:
+   rel=pathlib.PurePosixPath(str(item.get('path','')))
+   if not rel.parts or rel.is_absolute() or '..' in rel.parts: continue
+   target=(dest/pathlib.Path(*rel.parts)).resolve()
+   if dest not in target.parents: continue
+   file_content=str(item.get('content',''))[:10000]
+   target.parent.mkdir(parents=True,exist_ok=True)
+   target.write_text(file_content,encoding='utf-8')
+   created.append(str(target.relative_to(workspace)))
  checks=[]
- # Compile-only check for Python; generated app code is never executed.
  for rel in created:
   p=(workspace/rel).resolve()
   if p.suffix=='.py':
    import py_compile
-   try: py_compile.compile(str(p),doraise=True); checks.append({'file':rel,'python_syntax':'passed'})
-   except Exception as e: checks.append({'file':rel,'python_syntax':'failed','error':str(e)[:500]})
- pid=str(uuid.uuid4())
- with db() as c: c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,task['title'],str(dest.relative_to(workspace)),'built',str(out.get('summary',''))[:2500],now()))
- log(f'Built {task["title"]}; {len(created)} files written; generated code not executed.')
- review=expert_review('software prototype', {'summary':out.get('summary',''),'files':created,'checks':checks,'suggested_tests':out.get('tests',[])})
- return {'project_id':pid,'name':task['title'],'path':str(dest.relative_to(workspace)),'files':created,'checks':checks,'summary':out.get('summary',''),'suggested_tests':out.get('tests',[]),'expert_review':review}
+   try:
+    py_compile.compile(str(p),doraise=True)
+    checks.append({'file':rel,'python_syntax':'passed'})
+   except Exception as e:
+    checks.append({'file':rel,'python_syntax':'failed','error':str(e)[:500]})
+ result={'kind':str(out.get('kind','other')),'answer':answer,'summary':summary,'files':created,'checks':checks,'suggested_tests':out.get('tests',[]),'limitations':out.get('limitations',[])}
+ if created:
+  pid=str(uuid.uuid4())
+  rel_path=str(pathlib.Path(created[0]).parent)
+  with db() as c:
+   c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,str(out.get('title') or task['title'])[:200],rel_path,'built',summary[:2500],now()))
+  result.update({'project_id':pid,'name':str(out.get('title') or task['title'])[:200],'path':rel_path})
+  log(f'Completed {task["title"]}; created {len(created)} files; generated code was not executed.')
+ else:
+  log(f'Completed text task: {task["title"]}')
+ result['expert_review']=expert_review(str(out.get('kind','other')),{'answer':answer[:5000],'summary':summary,'files':created,'checks':checks,'limitations':result['limitations']})
+ return result
 
 def render_polished_mp4(lesson, dest):
  """Render a narrated 720p scene-based MP4. Requires online Edge TTS and bundled ffmpeg."""
