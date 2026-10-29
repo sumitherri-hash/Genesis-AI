@@ -12,9 +12,13 @@ load_dotenv()
 APP_NAME = 'GENESIS AI'
 DB_PATH = os.getenv('GENESIS_DB', 'genesis.db')
 ADMIN_KEY = os.getenv('GENESIS_ADMIN_KEY', '')
-LLM_BASE_URL = os.getenv('LLM_BASE_URL', 'https://api.openai.com/v1').rstrip('/')
-LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('OPENAI_API_KEY', ''))
-LLM_MODEL = os.getenv('LLM_MODEL', 'gpt-4o-mini')
+LLM_BASE_URL = os.getenv('LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai').rstrip('/')
+# Never send an OpenAI key to Google's endpoint. Gemini uses its own dedicated secret.
+if 'generativelanguage.googleapis.com' in LLM_BASE_URL.lower():
+ LLM_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+else:
+ LLM_API_KEY = os.getenv('LLM_API_KEY', os.getenv('OPENAI_API_KEY', '')).strip()
+LLM_MODEL = os.getenv('LLM_MODEL', 'gemini-3.8-flash')
 POLL_SECONDS = max(30, int(os.getenv('POLL_SECONDS', '90')))
 MAX_TASKS_PER_CYCLE = max(1, min(5, int(os.getenv('MAX_TASKS_PER_CYCLE', '2'))))
 app = FastAPI(title=APP_NAME, version='0.8.0')
@@ -109,7 +113,7 @@ def require_admin(key):
   raise HTTPException(401,'Missing or invalid GENESIS admin key')
 def llm(messages,temperature=.2):
  if not LLM_API_KEY:
-  raise RuntimeError('AI provider is not configured. Add a valid LLM_API_KEY in Render Environment Variables.')
+  raise RuntimeError('AI provider is not configured. For Google Gemini, add GEMINI_API_KEY in Render Environment Variables; for other OpenAI-compatible providers, set LLM_API_KEY.')
  url=LLM_BASE_URL+'/chat/completions'
  last_error=None
  for attempt in range(3):
