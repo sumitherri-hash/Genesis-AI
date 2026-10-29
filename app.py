@@ -347,7 +347,14 @@ def worker():
 
 @app.on_event('startup')
 def startup():
- init_db(); threading.Thread(target=worker,daemon=True).start()
+ init_db()
+ # One-time bootstrap lets the first deployment begin evidence-led discovery.
+ # After the marker is saved, the dashboard's ON/OFF control remains authoritative.
+ if os.getenv('GENESIS_AUTOPILOT_BOOTSTRAP','false').lower() == 'true' and get_setting('autopilot_bootstrap_done','false') != 'true':
+  set_setting('autopilot','true')
+  set_setting('autopilot_bootstrap_done','true')
+  log('Autopilot enabled by one-time deployment bootstrap; research runs on the configured interval.')
+ threading.Thread(target=worker,daemon=True).start()
 @app.on_event('shutdown')
 def shutdown(): stop_event.set()
 @app.get('/',response_class=HTMLResponse)
