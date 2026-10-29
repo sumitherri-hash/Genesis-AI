@@ -17,7 +17,23 @@ services:
         sync: false
       - key: GENESIS_ADMIN_KEY
         generateValue: true
+      # Begin the first evidence-led discovery cycle on deployment, once only.
+      - key: GENESIS_AUTOPILOT_BOOTSTRAP
+        value: "true"
+      # Bound provider use: one company research cycle every six hours.
       - key: POLL_SECONDS
-        value: "90"
+        value: "21600"
       - key: MAX_TASKS_PER_CYCLE
-        value: "2"
+        value: "1"
+      - key: COUNCIL_POLL_SECONDS
+        value: "15"
+      - key: COUNCIL_MAX_DAILY_CALLS
+        value: "24"
+      - key: COUNCIL_MAX_ATTEMPTS
+        value: "3"
+      - key: COUNCIL_MISSION_INTERVAL_SECONDS
+        value: "21600"
+      - key: COMPANY_LOOP_POLL_SECONDS
+        value: "20"
+      - key: COMPANY_MEMORY_LIMIT
+        value: "8"
