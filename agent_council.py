@@ -119,7 +119,7 @@ def _init():
           day TEXT PRIMARY KEY, calls INTEGER NOT NULL DEFAULT 0
         );
         """)
-    core.log("12-agent council database initialized")
+    # Database logging is deferred until app.init_db() has created the logs table.
 
 
 def _today_calls():
