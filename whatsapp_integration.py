@@ -116,21 +116,8 @@ def _answer_message(sender: str, message_text: str, message_id: str) -> None:
 
 def install(app: FastAPI) -> None:
     @app.get("/webhooks/whatsapp", response_class=PlainTextResponse)
-    def verify_whatsapp_webhook(
-        hub_mode: str = "",
-        hub_verify_token: str = "",
-        hub_challenge: str = "",
-    ):
-        # Meta sends dotted query parameter names; read them from Request below if needed.
-        if not VERIFY_TOKEN:
-            raise HTTPException(503, "WhatsApp webhook verification is not configured.")
-        if hub_mode == "subscribe" and hmac.compare_digest(hub_verify_token, VERIFY_TOKEN):
-            return hub_challenge
-        raise HTTPException(403, "Webhook verification failed.")
-
-    @app.get("/webhooks/whatsapp/meta", response_class=PlainTextResponse)
-    async def verify_whatsapp_meta(request: Request):
-        # Alternate route accepts Meta's exact hub.mode / hub.verify_token parameter names.
+    async def verify_whatsapp_webhook(request: Request):
+        # Meta uses dotted query parameter names: hub.mode, hub.verify_token, hub.challenge.
         params = request.query_params
         mode = params.get("hub.mode", "")
         token = params.get("hub.verify_token", "")
