@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app import app
 import agent_council
 import company_loop
+import whatsapp_integration
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -30,3 +31,4 @@ def pwa_icon():
 
 agent_council.install(app)
 company_loop.install(app)
+whatsapp_integration.install(app)
