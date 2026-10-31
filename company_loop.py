@@ -167,14 +167,35 @@ def _review(task_id):
             with core.db() as c:
                 exists = c.execute("SELECT 1 FROM company_followups WHERE day=?", (day,)).fetchone()
             if not exists:
-                follow_title = "[AUTO] " + str(next_step.get("title", "Validate opportunity"))[:180]
-                follow_description = (
-                    "Autonomous internal follow-up generated from task " + task_id + ". "
-                    "This is bounded internal research/prototyping only; do not publish, contact customers, "
-                    "spend money, create accounts, or modify production systems.\n\n"
-                    + str(next_step.get("description", ""))[:3000]
-                    + "\n\nOriginal evidence-aware review: " + json.dumps(result, ensure_ascii=False)[:3000]
+                build_mvp = (
+                    result.get("decision") == "proceed"
+                    and result["opportunity_score"] >= 75
+                    and str(result.get("confidence", "low")).lower() == "high"
                 )
+                if build_mvp:
+                    follow_title = "[AUTO] Build MVP and launch kit: " + str(task["title"])[:130]
+                    follow_description = (
+                        "Autonomous internal product-build task generated after a high-confidence company review. "
+                        "Build a small, usable, mobile-friendly MVP for this opportunity and create a practical "
+                        "launch kit: README/setup guide, product brief, landing-page copy, pricing hypotheses, "
+                        "customer-validation plan, and FAQ. Include basic accessibility and acceptance checks. "
+                        "Keep the prototype self-contained where practical. Clearly label assumptions and anything "
+                        "not tested. This is preparation only: do not publish, contact customers, accept payments, "
+                        "create accounts, spend money, sign agreements, or modify production systems.\n\n"
+                        "Approved internal next-step context: " + str(next_step.get("description", ""))[:2500]
+                        + "\n\nOriginal evidence-aware review: " + json.dumps(result, ensure_ascii=False)[:3000]
+                    )
+                else:
+                    follow_title = "[AUTO] " + str(next_step.get("title", "Validate opportunity"))[:180]
+                    follow_description = (
+                        "Autonomous internal validation follow-up generated from task " + task_id + ". "
+                        "Collect and compare evidence, identify reachable customer segments, alternatives, "
+                        "and a low-cost way to test willingness to pay. Do not invent interviews, customers, "
+                        "market sizes, or sales. Do not publish, contact customers, accept payments, create "
+                        "accounts, spend money, sign agreements, or modify production systems.\n\n"
+                        + str(next_step.get("description", ""))[:2500]
+                        + "\n\nOriginal evidence-aware review: " + json.dumps(result, ensure_ascii=False)[:3000]
+                    )
                 follow_id = core.create_task(follow_title, follow_description, "builder")
                 try:
                     import agent_council
