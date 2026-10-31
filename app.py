@@ -206,7 +206,7 @@ def build(task):
 - For code, a website, app, or other digital product, create a working minimal prototype and files.
 - For study-video/lesson requests, the dedicated lesson generator handles those.
 Return valid JSON only with keys: kind (answer|writing|plan|research|analysis|software|other), title, answer (complete useful response in text), summary (short result summary), files (array of {{path,content}}; may be empty for text-only requests), tests (array), limitations (array).
-Rules: do not ask follow-up questions unless essential; make sensible safe assumptions. If the user requests files, create up to 8 text files, each <=10000 chars. File paths must be relative and must not contain .. or be absolute. No secrets, malware, exploit code, hidden tracking/network behavior, destructive commands, shell scripts, or unsafe execution. Do not claim external research, tests, messages, purchases, or deployments occurred unless actually performed. If the request requires an external account, access, payment, physical-world action, or unavailable integration, explain the limitation and still complete the useful portion. For medical/legal/financial high-impact topics, provide general information and appropriate cautions. User request title: {task['title']}\nFull request: {task['description']}'''
+Rules: do not ask follow-up questions unless essential; make sensible safe assumptions. If the user requests files, create up to 8 text files, each <=10000 chars. File paths must be relative and must not contain .. or be absolute. No secrets, malware, exploit code, hidden tracking/network behavior, destructive commands, shell scripts, or unsafe execution. Do not claim external research, tests, messages, purchases, or deployments occurred unless actually performed. If the request requires an external account, access, payment, physical-world action, or unavailable integration, explain the limitation and still complete the useful portion. For medical/legal/financial high-impact topics, provide general information and appropriate cautions. For an internal company task whose title begins [AUTO], act like a product team: when the evidence supports building, create a small genuinely usable mobile-friendly MVP plus a README, product brief, landing-page copy, pricing hypotheses, customer-validation plan, and FAQ within the 8-file limit. Prefer a self-contained HTML/CSS/JS prototype when suitable. Include basic accessibility and clear setup instructions. Never include analytics or hidden tracking by default. Do not publish the product, contact customers, accept payments, create accounts, or spend money; prepare launch materials for review only. If evidence is weak, create a validation pack rather than pretending the product is ready. User request title: {task['title']}\nFull request: {task['description']}'''
  out=parse_json(llm([{'role':'system','content':'You are GENESIS, a reliable general-purpose task executor. You must understand and fulfil the specific user intent. You can answer questions, draft text, make plans, analyse supplied information, and generate safe digital prototypes. Be useful, honest about limits, concise but complete. Return valid JSON only.'},{'role':'user','content':prompt}],.15))
  answer=str(out.get('answer','')).strip()
  summary=str(out.get('summary','')).strip() or answer[:500]
@@ -386,7 +386,12 @@ def run_cycle():
  strategy={'status':'skipped','message':'No new findings this cycle.'}
  try:
   d=discover()
-  if d.get('count',0)>0: strategy=strategize()
+  if d.get('count',0)>0:
+   strategy=strategize()
+   # Do not leave an internally generated product task idle until the next six-hour cycle.
+   if strategy.get('task_id'):
+    process_task_id(strategy['task_id'])
+    log('Autopilot immediately started the newly prioritized product task.')
  except Exception as e:
   log(f'Research step failed; queued tasks were processed: {e}','WARN')
  set_setting('last_cycle',now()); log('Autopilot cycle finished')
