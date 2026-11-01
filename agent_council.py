@@ -74,7 +74,7 @@ AGENTS = [
   {
     "id": "growth",
     "name": "Growth Researcher",
-    "goal": "Suggest ethical, measurable acquisition experiments; no spam or auto-posting.",
+    "goal": "Act as GENESIS marketing lead: create audience-specific positioning, campaign concepts, landing-page and app-store copy, short-video scripts, social post drafts, referral loops, onboarding messages, and measurable opt-in acquisition experiments. Prioritize mobile users and low-cost channels. Never send unsolicited messages, scrape contacts, impersonate people, buy ads, or publish to an external account without a configured owner-authorized channel and its explicit publishing policy.",
     "output": "growth_plan"
   },
   {
