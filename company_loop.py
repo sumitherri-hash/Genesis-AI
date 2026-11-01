@@ -58,18 +58,28 @@ def _reserve_call():
 def _completed_tasks():
     with core.db() as c:
         return [dict(r) for r in c.execute(
-            "SELECT task_id,COUNT(*) AS total,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,"
-            "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed "
-            "FROM council_jobs GROUP BY task_id HAVING total=12 AND completed+failed=12 LIMIT 40"
+            "SELECT j.task_id,COUNT(*) AS total,SUM(CASE WHEN j.status='completed' THEN 1 ELSE 0 END) AS completed,"
+            "SUM(CASE WHEN j.status='failed' THEN 1 ELSE 0 END) AS failed "
+            "FROM council_jobs j INNER JOIN tasks t ON t.id=j.task_id "
+            "GROUP BY j.task_id HAVING total=12 AND completed+failed=12 LIMIT 40"
         )]
 
 
 def _review(task_id):
     with _lock:
         with core.db() as c:
-            existing = c.execute("SELECT status FROM company_reviews WHERE task_id=?", (task_id,)).fetchone()
+            existing = c.execute("SELECT status,updated_at FROM company_reviews WHERE task_id=?", (task_id,)).fetchone()
             if existing and existing["status"] in ("completed", "running"):
                 return
+            if existing and existing["status"] == "failed":
+                # Avoid retrying a failed synthesis every poll; allow a cooldown
+                # before the next bounded attempt.
+                try:
+                    failed_at = datetime.fromisoformat(existing["updated_at"].replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - failed_at).total_seconds() < 600:
+                        return
+                except Exception:
+                    return
             c.execute(
                 "INSERT INTO company_reviews(task_id,status,review_json,error,created_at,updated_at) VALUES(?, 'running','{}','',?,?) "
                 "ON CONFLICT(task_id) DO UPDATE SET status='running',error='',updated_at=excluded.updated_at",
