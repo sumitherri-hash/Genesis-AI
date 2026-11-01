@@ -198,6 +198,108 @@ def create_task(title,description,agent='coordinator'):
  log('Task queued: '+title)
  return tid
 
+
+# Industry workspaces: structured, durable business/farm records and tutor workflows.
+# This MVP uses the existing local SQLite store. Add authenticated tenant isolation
+# and managed persistent storage before using it for real customer financial records.
+with db() as _c:
+ _c.executescript("""
+ CREATE TABLE IF NOT EXISTS workspaces(
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
+  profile TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS workspace_records(
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
+  payload TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+ );
+ CREATE INDEX IF NOT EXISTS idx_workspace_records ON workspace_records(workspace_id,kind,created_at);
+ """)
+
+class WorkspaceCreate(BaseModel):
+ kind:str
+ name:str
+ profile:dict={}
+class RecordCreate(BaseModel):
+ kind:str
+ payload:dict={}
+class WorkspaceUpdate(BaseModel):
+ profile:dict
+
+def _workspace_public(row):
+ return {'id':row['id'],'kind':row['kind'],'name':row['name'],'profile':json.loads(row['profile'] or '{}'),'created_at':row['created_at'],'updated_at':row['updated_at']}
+
+@app.post('/api/workspaces')
+def create_workspace(data:WorkspaceCreate):
+ kind=data.kind.strip().lower()
+ if kind not in ('business','farm','school'): raise HTTPException(400,'Choose business, farm, or school.')
+ name=data.name.strip()
+ if not name: raise HTTPException(400,'Workspace name is required.')
+ wid=str(uuid.uuid4()); stamp=now()
+ with db() as c:
+  c.execute('INSERT INTO workspaces(id,kind,name,profile,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+   (wid,kind,name[:120],json.dumps(data.profile,ensure_ascii=False)[:12000],stamp,stamp))
+ log(f'Created {kind} workspace: {name[:100]}')
+ return {'workspace':{'id':wid,'kind':kind,'name':name[:120],'profile':data.profile,'created_at':stamp,'updated_at':stamp},
+         'notice':'Prototype workspace. Do not store sensitive personal or payment data.'}
+
+@app.get('/api/workspaces')
+def list_workspaces():
+ with db() as c: rows=c.execute('SELECT * FROM workspaces ORDER BY updated_at DESC LIMIT 100').fetchall()
+ return {'workspaces':[_workspace_public(x) for x in rows],
+         'notice':'Prototype mode: workspace IDs are not authentication. Do not expose private records publicly.'}
+
+@app.get('/api/workspaces/{workspace_id}')
+def get_workspace(workspace_id:str):
+ with db() as c:
+  row=c.execute('SELECT * FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
+  if not row: raise HTTPException(404,'Workspace not found.')
+  records=c.execute('SELECT * FROM workspace_records WHERE workspace_id=? ORDER BY created_at DESC LIMIT 500',(workspace_id,)).fetchall()
+ return {'workspace':_workspace_public(row),'records':[{'id':x['id'],'kind':x['kind'],'payload':json.loads(x['payload']),'created_at':x['created_at']} for x in records]}
+
+@app.patch('/api/workspaces/{workspace_id}')
+def update_workspace(workspace_id:str,data:WorkspaceUpdate):
+ with db() as c:
+  row=c.execute('SELECT id FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
+  if not row: raise HTTPException(404,'Workspace not found.')
+  c.execute('UPDATE workspaces SET profile=?,updated_at=? WHERE id=?',(json.dumps(data.profile,ensure_ascii=False)[:12000],now(),workspace_id))
+ return {'ok':True,'workspace_id':workspace_id}
+
+@app.post('/api/workspaces/{workspace_id}/records')
+def add_workspace_record(workspace_id:str,data:RecordCreate):
+ kind=data.kind.strip().lower()
+ allowed={'business':{'product','sale','purchase','expense','customer','note'},
+          'farm':{'crop','input','expense','harvest','market_quote','task','note'},
+          'school':{'lesson','quiz_result','note'}}
+ with db() as c:
+  row=c.execute('SELECT kind FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
+  if not row: raise HTTPException(404,'Workspace not found.')
+  if kind not in allowed.get(row['kind'],set()): raise HTTPException(400,'Record type is not allowed for this workspace.')
+  rid=str(uuid.uuid4()); stamp=now()
+  c.execute('INSERT INTO workspace_records(id,workspace_id,kind,payload,created_at) VALUES(?,?,?,?,?)',
+   (rid,workspace_id,kind,json.dumps(data.payload,ensure_ascii=False)[:10000],stamp))
+  c.execute('UPDATE workspaces SET updated_at=? WHERE id=?',(stamp,workspace_id))
+ return {'ok':True,'record_id':rid,'kind':kind,'created_at':stamp}
+
+@app.get('/api/workspaces/{workspace_id}/summary')
+def workspace_summary(workspace_id:str):
+ with db() as c:
+  row=c.execute('SELECT * FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
+  if not row: raise HTTPException(404,'Workspace not found.')
+  rows=c.execute('SELECT kind,payload FROM workspace_records WHERE workspace_id=?',(workspace_id,)).fetchall()
+ kind=row['kind']; items=[(x['kind'],json.loads(x['payload'])) for x in rows]
+ counts={}
+ for k,_ in items: counts[k]=counts.get(k,0)+1
+ result={'workspace':_workspace_public(row),'record_counts':counts,'record_total':len(items)}
+ if kind=='business':
+  sales=sum(float(p.get('total',p.get('amount',0)) or 0) for k,p in items if k=='sale')
+  purchases=sum(float(p.get('total',p.get('amount',0)) or 0) for k,p in items if k=='purchase')
+  expenses=sum(float(p.get('amount',p.get('total',0)) or 0) for k,p in items if k=='expense')
+  result['totals']={'recorded_sales':round(sales,2),'recorded_purchases':round(purchases,2),'recorded_expenses':round(expenses,2),
+                    'sales_minus_recorded_purchases_and_expenses':round(sales-purchases-expenses,2),
+                    'warning':'This is a simple cash-record summary, not accounting profit. It excludes opening/closing stock, tax, credit, returns and other adjustments unless recorded.'}
+ return result
+
 class TaskIn(BaseModel): title:str; description:str=''; agent:str='builder'
 class MissionIn(BaseModel): mission:str
 
