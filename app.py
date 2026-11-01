@@ -374,6 +374,50 @@ def strategize():
  return {'status':'ok','task_id':tid,'strategy':out}
 
 def slugify(s): return re.sub(r'[^a-z0-9]+','-',s.lower()).strip('-')[:48] or 'genesis-project'
+def _validate_generated_files(workspace, created):
+ """Run non-executing checks on generated project files; never run generated application code."""
+ import ast
+ import html.parser
+ import shutil
+ import subprocess
+ class MarkupCheck(html.parser.HTMLParser):
+  def __init__(self):
+   super().__init__(convert_charrefs=True); self.errors=[]; self.has_title=False; self.has_viewport=False
+  def handle_starttag(self, tag, attrs):
+   attrs=dict(attrs)
+   if tag=='title': self.has_title=True
+   if tag=='meta' and attrs.get('name','').lower()=='viewport': self.has_viewport=True
+   ref=attrs.get('src') if tag in ('script','img') else attrs.get('href') if tag=='link' else None
+   if ref and not ref.startswith(('https://','http://','data:','#','mailto:','tel:')):
+    local=(current.parent/ref.split('?',1)[0].split('#',1)[0]).resolve()
+    if not local.exists(): self.errors.append('Missing local asset: '+ref)
+ checks=[]; node=shutil.which('node')
+ for rel in created:
+  current=(workspace/rel).resolve(); suffix=current.suffix.lower()
+  if suffix=='.py':
+   try:
+    ast.parse(current.read_text(encoding='utf-8')); checks.append({'file':rel,'check':'python_syntax','status':'passed'})
+   except Exception as exc: checks.append({'file':rel,'check':'python_syntax','status':'failed','detail':str(exc)[:300]})
+  elif suffix=='.html':
+   parser=MarkupCheck()
+   try:
+    parser.feed(current.read_text(encoding='utf-8'))
+    if not parser.has_title: parser.errors.append('Missing page title')
+    if not parser.has_viewport: parser.errors.append('Missing responsive viewport meta')
+    checks.append({'file':rel,'check':'html_structure_and_local_assets','status':'failed' if parser.errors else 'passed','detail':parser.errors})
+   except Exception as exc: checks.append({'file':rel,'check':'html_parse','status':'failed','detail':str(exc)[:300]})
+  elif suffix=='.js':
+   if node:
+    try:
+     run=subprocess.run([node,'--check',str(current)],capture_output=True,text=True,timeout=10)
+     checks.append({'file':rel,'check':'javascript_syntax','status':'passed' if run.returncode==0 else 'failed','detail':run.stderr[-500:]})
+    except Exception as exc: checks.append({'file':rel,'check':'javascript_syntax','status':'not_run','detail':str(exc)[:250]})
+   else: checks.append({'file':rel,'check':'javascript_syntax','status':'not_run','detail':'Node.js unavailable; syntax check skipped.'})
+  elif suffix=='.css':
+   css=current.read_text(encoding='utf-8')
+   checks.append({'file':rel,'check':'css_braces','status':'passed' if css.count('{')==css.count('}') else 'failed'})
+ return checks
+
 def build(task):
  workspace=pathlib.Path(get_setting('workspace','workspace')).resolve()
  workspace.mkdir(parents=True,exist_ok=True)
@@ -408,28 +452,19 @@ Rules: do not ask follow-up questions unless essential; make sensible safe assum
    target.parent.mkdir(parents=True,exist_ok=True)
    target.write_text(file_content,encoding='utf-8')
    created.append(str(target.relative_to(workspace)))
- checks=[]
- for rel in created:
-  p=(workspace/rel).resolve()
-  if p.suffix=='.py':
-   import py_compile
-   try:
-    py_compile.compile(str(p),doraise=True)
-    checks.append({'file':rel,'python_syntax':'passed'})
-   except Exception as e:
-    checks.append({'file':rel,'python_syntax':'failed','error':str(e)[:500]})
+ checks=_validate_generated_files(workspace, created)
  result={'kind':str(out.get('kind','other')),'answer':answer,'summary':summary,'files':created,'checks':checks,'suggested_tests':out.get('tests',[]),'limitations':out.get('limitations',[])}
  if created:
   pid=str(uuid.uuid4())
   rel_path=str(pathlib.Path(created[0]).parent)
   with db() as c:
-   c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,str(out.get('title') or task['title'])[:200],rel_path,'built',summary[:2500],now()))
+   c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,str(out.get('title') or task['title'])[:200],rel_path,('built' if all(x.get('status') in ('passed','not_run') for x in checks) else 'needs_fix'),summary[:2500],now()))
   result.update({'project_id':pid,'name':str(out.get('title') or task['title'])[:200],'path':rel_path})
-  log(f'Completed {task["title"]}; created {len(created)} files; generated code was not executed.')
+  log(f'Completed {task["title"]}; created {len(created)} files; ran non-executing syntax, structure and local-asset checks. Generated application code was not run.')
  else:
   log(f'Completed text task: {task["title"]}')
- # Fast mode: avoid a second model round-trip on every task. Structural checks above remain available.
- result['expert_review']={'status':'not_run_fast_mode','reason':'Skipped second-pass review to return the primary result sooner.'}
+ # Automated checks are not a substitute for live runtime or expert review.
+ result['quality_gate']={'status':'passed' if all(x.get('status') in ('passed','not_run') for x in checks) else 'needs_fix','automated_checks':checks,'runtime_execution':'not_performed','human_review':'required_before_public_launch'}
  return result
 
 def render_polished_mp4(lesson, dest):
