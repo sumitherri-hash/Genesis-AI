@@ -90,7 +90,35 @@ AGENTS = [
     "output": "operations_plan"
   }
 ]
-POLL_SECONDS = max(5, int(os.getenv("COUNCIL_POLL_SECONDS", "15")))
+
+# Corporate org chart: named virtual leadership and department positions are
+# mapped onto the 12 persistent specialist worker processes below. These are
+# software roles, not separate human employees or 18 extra model instances.
+EXECUTIVE_TEAM = [
+  {"id":"ceo","title":"AI Chief Executive Officer","department":"Executive Office","reports_to":None,"agent_id":"ops","mission":"Own the company mission, portfolio priorities, and evidence-based go/no-go recommendations."},
+  {"id":"coo","title":"AI Chief Operating Officer","department":"Executive Office","reports_to":"ceo","agent_id":"ops","mission":"Coordinate departments, queues, deadlines, handoffs, and operational reliability."},
+  {"id":"cto","title":"AI Chief Technology Officer","department":"Executive Office","reports_to":"ceo","agent_id":"architect","mission":"Set technical direction, architecture standards, and engineering priorities."},
+  {"id":"cfo","title":"AI Chief Financial Officer","department":"Executive Office","reports_to":"ceo","agent_id":"finance","mission":"Track actual costs and revenue where recorded; model pricing and unit economics without inventing figures."},
+  {"id":"cso","title":"AI Chief Strategy Officer","department":"Executive Office","reports_to":"ceo","agent_id":"product","mission":"Prioritize validated problems, strategic opportunities, and measurable experiments."},
+  {"id":"cmo","title":"AI Chief Marketing Officer","department":"Executive Office","reports_to":"ceo","agent_id":"growth","mission":"Lead ethical positioning, marketing research, content plans, and acquisition experiments."}
+]
+DEPARTMENTS = [
+ {"id":"research","name":"Research & Innovation","head":"cso","positions":[
+  {"title":"Problem Discovery Analyst","agent_id":"scout"},{"title":"Market Research Analyst","agent_id":"research"},{"title":"Customer Insights Specialist","agent_id":"customer"},{"title":"Technology Trends Analyst","agent_id":"scout"}]},
+ {"id":"engineering","name":"Engineering & Product","head":"cto","positions":[
+  {"title":"Product Strategist","agent_id":"product"},{"title":"Systems Architect","agent_id":"architect"},{"title":"AI / Software Engineer","agent_id":"builder"},{"title":"Prototype Developer","agent_id":"builder"}]},
+ {"id":"quality","name":"Quality & Security","head":"cto","positions":[
+  {"title":"Quality Assurance Engineer","agent_id":"qa"},{"title":"Security & Privacy Reviewer","agent_id":"security"},{"title":"Customer Experience Reviewer","agent_id":"design"}]},
+ {"id":"business","name":"Business Development","head":"coo","positions":[
+  {"title":"Business Development Analyst","agent_id":"customer"},{"title":"Customer Research Specialist","agent_id":"customer"},{"title":"Partnership Research Analyst","agent_id":"research"}]},
+ {"id":"marketing","name":"Marketing & Growth","head":"cmo","positions":[
+  {"title":"Growth Strategist","agent_id":"growth"},{"title":"Content & Campaign Planner","agent_id":"design"},{"title":"Brand Experience Designer","agent_id":"design"}]},
+ {"id":"finance","name":"Finance & Economics","head":"cfo","positions":[
+  {"title":"Unit Economics Analyst","agent_id":"finance"},{"title":"Pricing & Cost Analyst","agent_id":"finance"}]},
+ {"id":"operations","name":"Operations & Customer Experience","head":"coo","positions":[
+  {"title":"Operations Coordinator","agent_id":"ops"},{"title":"Customer Experience Specialist","agent_id":"design"}]}
+]
+\nPOLL_SECONDS = max(5, int(os.getenv("COUNCIL_POLL_SECONDS", "15")))
 MAX_DAILY_CALLS = max(12, int(os.getenv("COUNCIL_MAX_DAILY_CALLS", "36")))
 MAX_ATTEMPTS = max(1, int(os.getenv("COUNCIL_MAX_ATTEMPTS", "3")))
 stop = threading.Event()
@@ -348,6 +376,43 @@ def install(fastapi_app):
     @fastapi_app.on_event("shutdown")
     def _shutdown_council():
         stop.set()
+
+
+    @fastapi_app.get("/api/internal/organization")
+    def organization(x_genesis_key: str | None = Header(default=None)):
+        core.require_admin(x_genesis_key)
+        _init()
+        with core.db() as c:
+            rows = [dict(r) for r in c.execute(
+                "SELECT agent_id,status,COUNT(*) AS count FROM council_jobs GROUP BY agent_id,status"
+            )]
+        counts = {}
+        for row in rows:
+            counts.setdefault(row["agent_id"], {})[row["status"]] = row["count"]
+        workers = []
+        for agent in AGENTS:
+            workers.append({
+                **agent,
+                "thread_alive": any(t.is_alive() and t.name == "genesis-agent-" + agent["id"] for t in threads),
+                "jobs": counts.get(agent["id"], {})
+            })
+        return {
+            "company": "GENESIS AI",
+            "founder": "Human Founder / Owner",
+            "leadership": EXECUTIVE_TEAM,
+            "departments": DEPARTMENTS,
+            "workers": workers,
+            "execution_model": {
+                "persistent_specialist_workers": len(AGENTS),
+                "virtual_positions": len(EXECUTIVE_TEAM) + sum(len(d["positions"]) for d in DEPARTMENTS),
+                "note": "Multiple virtual positions are assigned to the 12 persistent specialist workers. They are not separate human employees or separate model instances."
+            },
+            "guardrails": [
+                "Agents may research, plan, build internal prototypes, test, and prepare launch materials.",
+                "External outreach, public publishing, spending, purchases, contracts, and financial commitments require human approval.",
+                "Revenue is counted only when a real transaction is recorded; projections are not earnings."
+            ]
+        }
 
     @fastapi_app.get("/api/internal/council")
     def council_status(x_genesis_key: str | None = Header(default=None)):
