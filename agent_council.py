@@ -50,7 +50,7 @@ AGENTS = [
   {
     "id": "builder",
     "name": "Prototype Builder",
-    "goal": "Produce an implementation plan and safe code-generation task specification; do not execute code.",
+    "goal": "Build an actual usable internal prototype from the product brief; produce implementation files and acceptance criteria, then let the dedicated quality gate inspect the generated files. Never deploy, publish, contact users, spend money, or change production.",
     "output": "build_spec"
   },
   {
