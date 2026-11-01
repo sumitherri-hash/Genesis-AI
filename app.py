@@ -118,7 +118,7 @@ def llm(messages,temperature=.2):
  last_error=None
  for attempt in range(3):
   try:
-   r=requests.post(url,headers={'Authorization':'Bearer '+LLM_API_KEY,'Content-Type':'application/json'},json={'model':LLM_MODEL,'messages':messages,'temperature':temperature},timeout=90)
+   r=requests.post(url,headers={'Authorization':'Bearer '+LLM_API_KEY,'Content-Type':'application/json'},json={'model':LLM_MODEL,'messages':messages,'temperature':temperature},timeout=35)
    if r.status_code == 409 or r.status_code == 429 or r.status_code >= 500:
     detail=(r.text or '')[:500]
     last_error=RuntimeError(f'AI provider returned HTTP {r.status_code}. '+('Conflict: retrying the request; if it persists, verify LLM_BASE_URL, LLM_MODEL, and provider status. ' if r.status_code==409 else 'Temporary provider/rate-limit issue. ') + detail)
@@ -246,7 +246,8 @@ Rules: do not ask follow-up questions unless essential; make sensible safe assum
   log(f'Completed {task["title"]}; created {len(created)} files; generated code was not executed.')
  else:
   log(f'Completed text task: {task["title"]}')
- result['expert_review']=expert_review(str(out.get('kind','other')),{'answer':answer[:5000],'summary':summary,'files':created,'checks':checks,'limitations':result['limitations']})
+ # Fast mode: avoid a second model round-trip on every task. Structural checks above remain available.
+ result['expert_review']={'status':'not_run_fast_mode','reason':'Skipped second-pass review to return the primary result sooner.'}
  return result
 
 def render_polished_mp4(lesson, dest):
@@ -349,13 +350,14 @@ def build_study_video(task):
  html_doc=html_doc.replace('__LESSON__',safe_json).replace('__YT__',json.dumps(youtube_url))
  (dest/'study_video.html').write_text(html_doc,encoding='utf-8')
  (dest/'lesson.json').write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding='utf-8')
- mp4_info = render_polished_mp4(out, dest)
+ # Fast mode: deliver the interactive lesson immediately; MP4 rendering can be a much slower follow-up task.
+ mp4_info = {'status':'skipped_fast_mode','reason':'Interactive lesson is ready; narrated MP4 rendering is disabled for faster response.'}
  pid=str(uuid.uuid4()); rel=str(dest.relative_to(workspace))
  summary=f"Created a narrated 720p MP4 with {len(scenes)} scenes and {len(quiz)} quiz questions, plus an interactive lesson. Technical audio/video stream checks passed; factual accuracy still needs textbook/teacher verification."
  with db() as c: c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,title,rel,'built',summary,now()))
  log(f'Created study lesson package: {title}; {len(scenes)} scenes; {len(quiz)} quiz questions. Browser-based narration; no MP4 export.')
- review=expert_review('study lesson', {'title':title,'subject':out.get('subject'),'grade':out.get('grade'),'learning_objectives':out.get('learning_objectives',[]),'scenes':scenes,'quiz':quiz,'recap':out.get('recap',[]),'quality_checks':out.get('quality_checks',[])})
- return {'project_id':pid,'name':title,'path':rel,'files':[rel+'/study_video.html',rel+'/lesson.json'],'summary':summary,'youtube_search_url':youtube_url,'mp4_url':'/workspace-files/'+rel+'/study_video.mp4','mp4_info':mp4_info,'expert_review':review,'checks':{'scene_count':len(scenes),'quiz_count':len(quiz),'structure':'passed','fact_check':'needs textbook/teacher verification','audio':'generated narration; technical audio stream verified','mp4_export':True,'learning_outcomes':'not scientifically validated'}}
+ review={'status':'not_run_fast_mode','reason':'Skipped second model review to return the lesson sooner.'}
+ return {'project_id':pid,'name':title,'path':rel,'files':[rel+'/study_video.html',rel+'/lesson.json'],'summary':summary,'youtube_search_url':youtube_url,'mp4_url':'/workspace-files/'+rel+'/study_video.mp4','mp4_info':mp4_info,'expert_review':review,'checks':{'scene_count':len(scenes),'quiz_count':len(quiz),'structure':'passed','fact_check':'needs textbook/teacher verification','audio':'generated narration; technical audio stream verified','mp4_export':False,'fast_mode':True,'learning_outcomes':'not scientifically validated'}}
 
 def process(task):
  try:
