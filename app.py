@@ -107,6 +107,13 @@ def init_db():
   c.execute("UPDATE settings SET value=? WHERE key='mission' AND value LIKE '%Do not spend money, publish publicly, contact people%'", (defaults['mission'],))
  pathlib.Path(get_setting('workspace','workspace')).mkdir(parents=True,exist_ok=True)
 
+def _request_user_or_admin(request):
+ key = request.headers.get('x-genesis-key', '')
+ if key and ADMIN_KEY and hmac.compare_digest(key, ADMIN_KEY):
+  return None
+ from auth_hub import _session_user
+ return _session_user(request)['id']
+
 def require_admin(key):
  if not ADMIN_KEY:
   raise HTTPException(503,'Admin protection is not configured. Set GENESIS_ADMIN_KEY before using controls.')
@@ -241,6 +248,11 @@ with db() as _c:
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
   profile TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
  );
+ CREATE TABLE IF NOT EXISTS user_task_owners(
+  task_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+ );
+ CREATE INDEX IF NOT EXISTS idx_user_task_owners_user ON user_task_owners(user_id);
  CREATE TABLE IF NOT EXISTS workspace_records(
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
   payload TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -675,6 +687,7 @@ def projects(x_genesis_key:str|None=Header(default=None)):
  with db() as c: return [dict(r) for r in c.execute('SELECT * FROM projects ORDER BY created_at DESC LIMIT 100')]
 @app.post('/api/tasks')
 def add_task(data:TaskIn,background_tasks:BackgroundTasks,request:Request):
+ user_id = _request_user_or_admin(request)
  # Public customer flow: no admin key prompt. Limit unauthenticated requests to reduce abuse/cost.
  client_ip = request.client.host if request.client else 'unknown'
  current = time.time()
@@ -687,13 +700,22 @@ def add_task(data:TaskIn,background_tasks:BackgroundTasks,request:Request):
  agent='builder' if data.agent=='builder' else 'builder'
  PUBLIC_REQUESTS[client_ip] = recent + [current]
  task_id=create_task(title,description,agent)
+ if user_id:
+  with db() as c: c.execute('INSERT OR REPLACE INTO user_task_owners(task_id,user_id,created_at) VALUES(?,?,?)',(task_id,user_id,now()))
  background_tasks.add_task(process_task_id,task_id)
  return {'id':task_id,'status':'queued','message':'Request accepted. Generation has started in the background. Check this task for its result.'}
 
 @app.get('/api/tasks/{task_id}')
-def get_task(task_id:str):
- with db() as c: row=c.execute('SELECT * FROM tasks WHERE id=?',(task_id,)).fetchone()
+def get_task(task_id:str,request:Request):
+ user_id = _request_user_or_admin(request)
+ with db() as c:
+  row=c.execute('SELECT * FROM tasks WHERE id=?',(task_id,)).fetchone()
+  owner=c.execute('SELECT user_id FROM user_task_owners WHERE task_id=?',(task_id,)).fetchone()
  if not row: raise HTTPException(404,'Task not found')
+ if owner and user_id != owner['user_id']:
+  raise HTTPException(404,'Task not found')
+ if not owner and user_id:
+  raise HTTPException(404,'Task not found')
  return dict(row)
 
 @app.get('/workspace-files/{relative_path:path}')
