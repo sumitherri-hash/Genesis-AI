@@ -57,3 +57,31 @@ The software can work without the dashboard open, but a process cannot run after
 - Keep the local server bound to `127.0.0.1` unless you understand the security implications.
 - Do not enable unrestricted shell execution, auto-spending, or automatic outbound messaging.
 - Back up `genesis.db` and the workspace. SQLite/local workspace files persist only where the host's disk persists.
+
+
+## Customer accounts and integrations (beta foundation)
+
+- Visit `/account` to create a separate GENESIS account or sign in.
+- Passwords are stored as PBKDF2-HMAC-SHA256 hashes, not plaintext.
+- Sessions use random opaque tokens stored as SHA-256 hashes in an HttpOnly, Secure (HTTPS), SameSite=Lax cookie.
+- Customer task creation and task retrieval require a signed-in account. A task is associated with its owner; other accounts cannot retrieve it by task ID.
+- Google OAuth uses per-user consent, PKCE, a short-lived single-use state value, verified Google identity, and read-only Gmail, Calendar, Drive metadata and YouTube scopes.
+- OAuth tokens are encrypted at rest with AES-256-GCM using `GENESIS_TOKEN_ENCRYPTION_KEY`. Render Blueprint generates this secret.
+- Refresh tokens are refreshed server-side. Tokens are never returned to browser JavaScript. Users can disconnect Google from `/account`.
+- Internal agent adapters can obtain a user's access token by calling `auth_hub.google_access_token_for_user(user_id)`; an agent must be explicitly given the correct user ID and must still obey the user's granted scopes.
+
+### Required Google setup
+
+1. In Google Cloud Console, create a project and configure the OAuth consent screen.
+2. Create an OAuth 2.0 Web application client.
+3. Add this exact authorised redirect URI: `https://genesis-ai-srdo.onrender.com/auth/google/callback`.
+4. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the Render service environment. Never place these in the repository or browser.
+5. Google may classify Gmail read-only access as a sensitive/restricted scope and require verification. During testing, add only approved test users. Do not claim public OAuth approval until Google grants it.
+
+### Production blockers — do not launch customer data publicly yet
+
+- Render Free uses ephemeral local storage. The SQLite account/session/OAuth database can be lost on redeploy or restart. Before real customers connect accounts, migrate all account, session, task-owner, audit and integration records to managed persistent PostgreSQL with backups and connection pooling.
+- Configure verified-email delivery, account recovery, MFA, monitoring, stronger shared rate limiting, security review and retention/deletion workflows.
+- Google OAuth credentials and Google consent-screen approval are still administrator setup tasks. Other providers are catalogue-only and remain marked Coming Soon until their official OAuth/API adapters, provider credentials and reviews are completed.
+- Google Maps generally uses a separate Maps Platform API key/billing model, not this Google user OAuth consent. VehicleQ support must be confirmed with its provider.
+- This beta account system is not a claim of complete production multi-tenant certification. Do not store sensitive personal, financial, health or children's data.
