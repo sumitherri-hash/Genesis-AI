@@ -338,8 +338,18 @@ def _scheduled_mission_pulse():
                         due = True
                 if due:
                     pulse_id = "mission-pulse-" + datetime.now(timezone.utc).strftime("%Y%m%d%H")
-                    enqueue_task(pulse_id, "Autonomous mission pulse", core.get_setting("mission", ""))
-                    core.log("Council scheduled a mission pulse; 12 agents have separate jobs.")
+                    pulse_title = "Autonomous mission pulse"
+                    pulse_description = core.get_setting("mission", "")
+                    # Create the parent task record before queuing specialist jobs.
+                    # Mark it completed so the general builder queue does not also
+                    # execute this orchestration-only pulse as a customer request.
+                    core.create_task(
+                        pulse_title, pulse_description, "coordinator",
+                        task_id=pulse_id, status="completed",
+                        result="Internal mission pulse delegated to the specialist council."
+                    )
+                    enqueue_task(pulse_id, pulse_title, pulse_description)
+                    core.log("Council scheduled a mission pulse with a matching parent task record.")
         except Exception as exc:
             try:
                 core.log(f"Council scheduled pulse error: {exc}", "WARN")
