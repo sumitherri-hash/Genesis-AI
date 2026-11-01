@@ -3,7 +3,7 @@ services:
     name: genesis-ai
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python -m compileall -q . && python -m unittest discover -s tests -v
     startCommand: uvicorn genesis_entry:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:
