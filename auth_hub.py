@@ -153,6 +153,37 @@ def _google_config():
 def _redirect_uri():
     return BASE_URL + "/auth/google/callback"
 
+def google_access_token_for_user(user_id):
+    """Internal adapter hook for agents. Never return tokens to browser code."""
+    with _db() as c:
+        row = c.execute("SELECT token_ciphertext,token_nonce,expires_at FROM user_integrations WHERE user_id=? AND provider='google'", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "This user has not connected Google.")
+    tokens = _decrypt(row["token_ciphertext"], row["token_nonce"])
+    try:
+        expires = datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else _now()
+    except Exception:
+        expires = _now()
+    if expires <= _now()+timedelta(seconds=90):
+        refresh = tokens.get("refresh_token")
+        if not refresh:
+            raise HTTPException(401, "Google authorisation expired. Reconnect this account.")
+        cid, secret = _google_config()
+        response = requests.post("https://oauth2.googleapis.com/token", data={
+            "client_id":cid,"client_secret":secret,"refresh_token":refresh,"grant_type":"refresh_token"
+        }, timeout=20)
+        if not response.ok:
+            raise HTTPException(401, "Google token refresh failed. Reconnect this account.")
+        fresh = response.json()
+        tokens.update(fresh)
+        tokens["refresh_token"] = refresh
+        expires = _now()+timedelta(seconds=int(fresh.get("expires_in",3600)))
+        ciphertext, nonce = _encrypt(tokens)
+        with _db() as c:
+            c.execute("UPDATE user_integrations SET token_ciphertext=?,token_nonce=?,expires_at=?,updated_at=? WHERE user_id=? AND provider='google'",
+                      (ciphertext,nonce,_iso(expires),_iso(_now()),user_id))
+    return tokens["access_token"]
+
 def install(app):
     @app.post("/api/auth/register")
     async def register(request: Request):
@@ -295,6 +326,18 @@ def install(app):
                        json.dumps(tokens.get("scope","").split()),ciphertext,nonce,expires,_iso(_now()),_iso(_now())))
             _audit(c,user["id"],"google_connected",profile["email"])
         return RedirectResponse("/account?connected=google", status_code=303)
+
+    @app.post("/api/user/integrations/google/health")
+    def google_health(request: Request):
+        user = _session_user(request)
+        token = google_access_token_for_user(user["id"])
+        check = requests.get("https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                             headers={"Authorization":"Bearer "+token}, timeout=15)
+        if not check.ok:
+            raise HTTPException(502, "Google connection check failed. Reconnect if this persists.")
+        data = check.json()
+        return {"ok":True,"provider":"google","gmail_account":data.get("emailAddress", ""),
+                "messages_total":data.get("messagesTotal"),"note":"Connection verified; message contents were not read."}
 
     @app.post("/api/user/integrations/google/disconnect")
     async def google_disconnect(request: Request):
