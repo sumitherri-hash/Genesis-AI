@@ -116,7 +116,7 @@ def require_admin(key):
 _LLM_GATE_LOCK = threading.Lock()
 _LLM_NEXT_SLOT = 0.0
 _LLM_COOLDOWN_UNTIL = 0.0
-_LLM_MIN_INTERVAL = max(4.5, float(os.getenv('LLM_MIN_INTERVAL_SECONDS', '5.0')))
+_LLM_MIN_INTERVAL = max(4.0, float(os.getenv('LLM_MIN_INTERVAL_SECONDS', '4.0')))
 def _llm_wait_for_slot():
  global _LLM_NEXT_SLOT
  while True:
