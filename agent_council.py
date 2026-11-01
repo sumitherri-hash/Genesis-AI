@@ -266,8 +266,15 @@ def _watch_tasks():
     while not stop.is_set():
         try:
             with core.db() as c:
+                # Keep normal customer-facing requests fast. The 12-agent council is
+                # reserved for internal autonomous-company work explicitly tagged [AUTO].
+                # Direct user tasks already receive the primary builder call; running 12
+                # extra model calls for every chat request wastes free-tier quota and adds
+                # queue contention without improving the immediate deliverable.
                 rows = [dict(r) for r in c.execute(
-                    "SELECT id,title,description FROM tasks WHERE created_at >= datetime('now','-2 day') ORDER BY created_at DESC LIMIT 30"
+                    "SELECT id,title,description FROM tasks "
+                    "WHERE title LIKE '[AUTO]%' AND created_at >= datetime('now','-2 day') "
+                    "ORDER BY created_at DESC LIMIT 30"
                 )]
             for row in rows:
                 with core.db() as c:
