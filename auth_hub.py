@@ -89,8 +89,12 @@ def _key():
         key = base64.urlsafe_b64decode(raw.encode())
     except Exception:
         key = b""
+    # Render may generate an opaque random secret. Derive a fixed AES-256 key
+    # from that high-entropy value when it is not already a 32-byte base64 key.
     if len(key) != 32:
-        raise HTTPException(503, "GENESIS_TOKEN_ENCRYPTION_KEY must be a URL-safe base64 encoded 32-byte key.")
+        if len(raw) < 32:
+            raise HTTPException(503, "GENESIS_TOKEN_ENCRYPTION_KEY must contain at least 32 characters.")
+        key = hashlib.sha256(raw.encode()).digest()
     return key
 
 def _encrypt(value):
