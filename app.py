@@ -535,11 +535,11 @@ def build_study_video(task):
  # Fast mode: deliver the interactive lesson immediately; MP4 rendering can be a much slower follow-up task.
  mp4_info = {'status':'skipped_fast_mode','reason':'Interactive lesson is ready; narrated MP4 rendering is disabled for faster response.'}
  pid=str(uuid.uuid4()); rel=str(dest.relative_to(workspace))
- summary=f"Created a narrated 720p MP4 with {len(scenes)} scenes and {len(quiz)} quiz questions, plus an interactive lesson. Technical audio/video stream checks passed; factual accuracy still needs textbook/teacher verification."
+ summary=f"Created an interactive browser-based lesson with {len(scenes)} scenes and {len(quiz)} quiz questions. MP4 export was not run in fast mode; factual accuracy still needs textbook/teacher verification."
  with db() as c: c.execute('INSERT INTO projects(id,name,path,status,summary,created_at) VALUES(?,?,?,?,?,?)',(pid,title,rel,'built',summary,now()))
  log(f'Created study lesson package: {title}; {len(scenes)} scenes; {len(quiz)} quiz questions. Browser-based narration; no MP4 export.')
  review={'status':'not_run_fast_mode','reason':'Skipped second model review to return the lesson sooner.'}
- return {'project_id':pid,'name':title,'path':rel,'files':[rel+'/study_video.html',rel+'/lesson.json'],'summary':summary,'youtube_search_url':youtube_url,'mp4_url':'/workspace-files/'+rel+'/study_video.mp4','mp4_info':mp4_info,'expert_review':review,'checks':{'scene_count':len(scenes),'quiz_count':len(quiz),'structure':'passed','fact_check':'needs textbook/teacher verification','audio':'generated narration; technical audio stream verified','mp4_export':False,'fast_mode':True,'learning_outcomes':'not scientifically validated'}}
+ return {'project_id':pid,'name':title,'path':rel,'files':[rel+'/study_video.html',rel+'/lesson.json'],'summary':summary,'youtube_search_url':youtube_url,'mp4_url':None,'mp4_info':mp4_info,'expert_review':review,'checks':{'scene_count':len(scenes),'quiz_count':len(quiz),'structure':'passed','fact_check':'needs textbook/teacher verification','audio':'generated narration; technical audio stream verified','mp4_export':False,'fast_mode':True,'learning_outcomes':'not scientifically validated'}}
 
 def process(task):
  try:
