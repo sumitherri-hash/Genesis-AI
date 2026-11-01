@@ -6,6 +6,7 @@ from app import app
 import agent_council
 import company_loop
 import whatsapp_integration
+import auth_hub
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -32,3 +33,9 @@ def pwa_icon():
 agent_council.install(app)
 company_loop.install(app)
 whatsapp_integration.install(app)
+auth_hub.install(app)
+
+@app.get('/account')
+def account_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'account.html').read_text(encoding='utf-8'))
