@@ -111,19 +111,60 @@ def require_admin(key):
   raise HTTPException(503,'Admin protection is not configured. Set GENESIS_ADMIN_KEY before using controls.')
  if not key or key != ADMIN_KEY:
   raise HTTPException(401,'Missing or invalid GENESIS admin key')
+# One shared process-wide request scheduler for every task, council agent, and review.
+# Gemini free tier allows only a small number of requests per minute; pace below that.
+_LLM_GATE_LOCK = threading.Lock()
+_LLM_NEXT_SLOT = 0.0
+_LLM_COOLDOWN_UNTIL = 0.0
+_LLM_MIN_INTERVAL = max(4.5, float(os.getenv('LLM_MIN_INTERVAL_SECONDS', '5.0')))
+def _llm_wait_for_slot():
+ global _LLM_NEXT_SLOT
+ while True:
+  with _LLM_GATE_LOCK:
+   now = time.monotonic()
+   slot = max(now, _LLM_NEXT_SLOT, _LLM_COOLDOWN_UNTIL)
+   _LLM_NEXT_SLOT = slot + _LLM_MIN_INTERVAL
+  delay = slot - time.monotonic()
+  if delay <= 0: return
+  time.sleep(min(delay, 30))
+def _llm_set_cooldown(seconds):
+ global _LLM_COOLDOWN_UNTIL, _LLM_NEXT_SLOT
+ with _LLM_GATE_LOCK:
+  until = time.monotonic() + max(30.0, min(float(seconds), 300.0))
+  _LLM_COOLDOWN_UNTIL = max(_LLM_COOLDOWN_UNTIL, until)
+  _LLM_NEXT_SLOT = max(_LLM_NEXT_SLOT, _LLM_COOLDOWN_UNTIL)
 def llm(messages,temperature=.2):
  if not LLM_API_KEY:
   raise RuntimeError('AI provider is not configured. For Google Gemini, add GEMINI_API_KEY in Render Environment Variables; for other OpenAI-compatible providers, set LLM_API_KEY.')
  url=LLM_BASE_URL+'/chat/completions'
  last_error=None
  for attempt in range(3):
+  _llm_wait_for_slot()
   try:
    r=requests.post(url,headers={'Authorization':'Bearer '+LLM_API_KEY,'Content-Type':'application/json'},json={'model':LLM_MODEL,'messages':messages,'temperature':temperature},timeout=35)
-   if r.status_code == 409 or r.status_code == 429 or r.status_code >= 500:
-    detail=(r.text or '')[:500]
-    last_error=RuntimeError(f'AI provider returned HTTP {r.status_code}. '+('Conflict: retrying the request; if it persists, verify LLM_BASE_URL, LLM_MODEL, and provider status. ' if r.status_code==409 else 'Temporary provider/rate-limit issue. ') + detail)
+   if r.status_code == 429:
+    retry_seconds=60.0
+    try:
+     retry_header=r.headers.get('Retry-After')
+     if retry_header: retry_seconds=max(retry_seconds,float(retry_header))
+    except Exception: pass
+    try:
+     body=r.json()
+     for detail_item in body.get('error',{}).get('details',[]):
+      retry_delay=detail_item.get('retryDelay')
+      if retry_delay and str(retry_delay).endswith('s'):
+       retry_seconds=max(1.0,float(str(retry_delay)[:-1]))
+    except Exception: pass
+    _llm_set_cooldown(retry_seconds)
+    last_error=RuntimeError('AI provider HTTP 429: request quota/rate limit reached. GENESIS has paused provider calls and will retry after the cooldown. Check Google AI Studio usage if this continues.')
     if attempt < 2:
-     time.sleep(1.5*(attempt+1))
+     continue
+    raise last_error
+   if r.status_code == 409 or r.status_code >= 500:
+    detail=(r.text or '')[:500]
+    last_error=RuntimeError(f'AI provider returned HTTP {r.status_code}. Temporary provider issue. '+detail)
+    if attempt < 2:
+     time.sleep(2*(attempt+1))
      continue
     raise last_error
    if not r.ok:
@@ -137,7 +178,7 @@ def llm(messages,temperature=.2):
   except (requests.Timeout,requests.ConnectionError) as e:
    last_error=RuntimeError('AI provider connection timed out or failed. Check provider availability and try again.')
    if attempt < 2:
-    time.sleep(1.5*(attempt+1))
+    time.sleep(2*(attempt+1))
     continue
    raise last_error from e
  if last_error: raise last_error
