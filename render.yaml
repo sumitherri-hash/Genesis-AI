@@ -26,7 +26,9 @@ services:
       - key: MAX_TASKS_PER_CYCLE
         value: "1"
       - key: COUNCIL_POLL_SECONDS
-        value: "15"
+        value: "5"
+      - key: LLM_MIN_INTERVAL_SECONDS
+        value: "4.0"
       - key: COUNCIL_MAX_DAILY_CALLS
         value: "24"
       - key: COUNCIL_MAX_ATTEMPTS
