@@ -120,13 +120,13 @@ def _review(task_id):
             "instruction": (
                 "Synthesize the 12 specialist reviews into a grounded company decision. "
                 "Prefer problems with strong evidence, urgent pain, reachable buyers, recurring value, "
-                "and credible willingness to pay. Do not invent market research or revenue. Separate facts "
-                "from hypotheses. Create one next-step proposal. Include an improvement lesson that can be "
+                "and credible willingness to pay. Design every viable product for mobile-first use by multiple independent users. Do not invent market research or revenue. Separate facts "
+                "from hypotheses. Include a practical go-to-market recommendation: target user segment, positioning, best-fit ethical channels, campaign concepts, landing-page message, short-form content ideas, opt-in signup path, onboarding and retention ideas, and measurable conversion metrics. Create one next-step proposal. Include an improvement lesson that can be "
                 "reused on future tasks. Do not propose spam, deception, unauthorized data collection, "
-                "automatic spending, public posting, contracts, or outbound messages. "
+                "automatic spending, unsolicited messages, contact scraping, public posting without an explicitly configured owner-authorized channel, contracts, or outbound messages. Prepare marketing assets and opt-in funnels autonomously; do not claim campaigns were published or users contacted. "
                 "Return JSON only: executive_summary, decision (proceed|validate|pause), "
                 "opportunity_score (0-100), evidence_gaps (array), next_step (object with title, description, "
-                "type: research|prototype|validation|operations), improvement_lesson, metrics_to_watch (array), "
+                "type: research|prototype|validation|operations|marketing), marketing_plan (object), improvement_lesson, metrics_to_watch (array), "
                 "approval_required (boolean), confidence (low|medium|high)."
             )
         }
@@ -187,7 +187,7 @@ def _review(task_id):
                     follow_description = (
                         "Autonomous internal product-build task generated after a high-confidence company review. "
                         "Build a small, usable, mobile-friendly MVP for this opportunity and create a practical "
-                        "launch kit: README/setup guide, product brief, landing-page copy, pricing hypotheses, "
+                        "launch kit: README/setup guide, product brief, landing-page copy, app-store listing draft, pricing hypotheses, "
                         "customer-validation plan, and FAQ. Include basic accessibility and acceptance checks. "
                         "Keep the prototype self-contained where practical. Clearly label assumptions and anything "
                         "not tested. This is preparation only: do not publish, contact customers, accept payments, "
@@ -199,7 +199,7 @@ def _review(task_id):
                     follow_title = "[AUTO] " + str(next_step.get("title", "Validate opportunity"))[:180]
                     follow_description = (
                         "Autonomous internal validation follow-up generated from task " + task_id + ". "
-                        "Collect and compare evidence, identify reachable customer segments, alternatives, "
+                        "Collect and compare evidence, identify reachable customer segments, alternatives, and ethical opt-in marketing channels, "
                         "and a low-cost way to test willingness to pay. Do not invent interviews, customers, "
                         "market sizes, or sales. Do not publish, contact customers, accept payments, create "
                         "accounts, spend money, sign agreements, or modify production systems.\n\n"
