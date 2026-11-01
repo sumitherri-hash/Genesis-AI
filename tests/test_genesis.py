@@ -55,6 +55,19 @@ class GenesisCoreTests(unittest.TestCase):
         self.assertEqual(row["title"], "First")
         self.assertEqual(row["status"], "completed")
 
+    def test_council_enqueue_recovers_missing_task_record(self):
+        import agent_council
+        task_id = "orphaned-council-task-regression"
+        with app.db() as conn:
+            conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+        result = agent_council.enqueue_task(task_id, "Council recovery test", "Verify task record recovery.")
+        self.assertEqual(result["queued_agents"], len(agent_council.AGENTS))
+        with app.db() as conn:
+            row = conn.execute("SELECT id,title,status FROM tasks WHERE id=?", (task_id,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["title"], "Council recovery test")
+        self.assertEqual(row["status"], "queued")
+
 
 
     def test_prototype_validator_accepts_valid_html_and_python(self):
