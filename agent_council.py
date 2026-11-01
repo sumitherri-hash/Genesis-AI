@@ -171,6 +171,19 @@ def _reserve_call():
 
 def enqueue_task(task_id, task_title, task_description):
     _init()
+    # The council and company-learning loop share task IDs with the primary task table.
+    # Recover an orphaned council enqueue before writing jobs; otherwise the review loop
+    # can finish all 12 specialists but fail with "Task record not found".
+    with core.db() as c:
+        task_exists = c.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not task_exists:
+        core.create_task(
+            str(task_title)[:200],
+            str(task_description)[:5000],
+            agent="coordinator",
+            task_id=task_id,
+            status="queued",
+        )
     past_lessons = []
     try:
         with core.db() as c:
