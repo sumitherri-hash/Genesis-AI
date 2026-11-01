@@ -56,5 +56,42 @@ class GenesisCoreTests(unittest.TestCase):
         self.assertEqual(row["status"], "completed")
 
 
+
+    def test_prototype_validator_accepts_valid_html_and_python(self):
+        workspace = Path(_TEST_DIR.name) / "validator-workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "index.html").write_text(
+            '<!doctype html><html><head><title>Demo</title>'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<link rel="stylesheet" href="styles.css"></head><body>Hello</body></html>',
+            encoding="utf-8"
+        )
+        (workspace / "styles.css").write_text("body { margin: 0; }", encoding="utf-8")
+        (workspace / "main.py").write_text("value = 42\\n", encoding="utf-8")
+        checks = app._validate_generated_files(
+            workspace, ["index.html", "styles.css", "main.py"]
+        )
+        self.assertTrue(all(item["status"] == "passed" for item in checks), checks)
+
+    def test_prototype_validator_flags_missing_html_assets_and_viewport(self):
+        workspace = Path(_TEST_DIR.name) / "validator-invalid"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "index.html").write_text(
+            '<html><head><title>Demo</title><link href="missing.css"></head><body></body></html>',
+            encoding="utf-8"
+        )
+        checks = app._validate_generated_files(workspace, ["index.html"])
+        self.assertEqual(checks[0]["status"], "failed")
+        self.assertTrue(any("Missing local asset" in item for item in checks[0]["detail"]))
+        self.assertTrue(any("viewport" in item.lower() for item in checks[0]["detail"]))
+
+    def test_prototype_validator_flags_invalid_python(self):
+        workspace = Path(_TEST_DIR.name) / "validator-python"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "broken.py").write_text("def unfinished(:\\n", encoding="utf-8")
+        checks = app._validate_generated_files(workspace, ["broken.py"])
+        self.assertEqual(checks[0]["status"], "failed")
+        self.assertEqual(checks[0]["check"], "python_syntax")
+
 if __name__ == "__main__":
     unittest.main()
