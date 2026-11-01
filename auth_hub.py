@@ -5,6 +5,7 @@ read-only Google scopes. It does not give agents blanket access to user data.
 """
 import os, re, json, time, hmac, base64, hashlib, secrets, sqlite3, urllib.parse
 from datetime import datetime, timezone, timedelta
+from contextlib import contextmanager
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 import requests
@@ -23,11 +24,16 @@ GOOGLE_SCOPES = [
 ]
 RATE = {}
 
+@contextmanager
 def _db():
     c = sqlite3.connect(DB_PATH, timeout=20)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys=ON")
-    return c
+    try:
+        yield c
+        c.commit()
+    finally:
+        c.close()
 
 def _now():
     return datetime.now(timezone.utc)
