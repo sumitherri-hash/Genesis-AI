@@ -186,18 +186,51 @@ def llm(messages,temperature=.2):
  if last_error: raise last_error
  raise RuntimeError('AI request failed unexpectedly.')
 def parse_json(s):
- s=re.sub(r'^```(?:json)?\s*|\s*```$','',s.strip(),flags=re.I)
- try: return json.loads(s)
+ # Model responses may contain Markdown fences, a short preamble, or minor
+ # JSON formatting mistakes. Recover only syntactic issues; never invent data.
+ raw = str(s or '').strip()
+ raw = re.sub(r'^\x60{3}(?:json)?\s*|\s*\x60{3}$', '', raw, flags=re.I).strip()
+ try:
+  return json.loads(raw)
  except Exception:
-  a,b=s.find('{'),s.rfind('}')
-  if a>=0 and b>a: return json.loads(s[a:b+1])
-  raise ValueError('Model did not return valid JSON')
-def create_task(title,description,agent='coordinator'):
- tid=str(uuid.uuid4())
- with db() as c: c.execute('INSERT INTO tasks(id,title,description,status,agent,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(tid,title[:200],description[:5000],'queued',agent,now(),now()))
- log('Task queued: '+title)
+  pass
+ # First try to decode a complete JSON object/array embedded in surrounding text.
+ decoder = json.JSONDecoder()
+ for start, char in enumerate(raw):
+  if char not in '{[':
+   continue
+  try:
+   value, _ = decoder.raw_decode(raw[start:])
+   return value
+  except Exception:
+   continue
+ # Repair common model formatting errors: unquoted property names and trailing commas.
+ repaired = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', raw)
+ repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
+ try:
+  return json.loads(repaired)
+ except Exception:
+  pass
+ for start, char in enumerate(repaired):
+  if char not in '{[':
+   continue
+  try:
+   value, _ = decoder.raw_decode(repaired[start:])
+   return value
+  except Exception:
+   continue
+ raise ValueError('Model response was not valid JSON after safe formatting recovery; retry the task.')
+def create_task(title,description,agent='coordinator',task_id=None,status='queued',result=''):
+ tid = task_id or str(uuid.uuid4())
+ stamp = now()
+ with db() as c:
+  inserted = c.execute(
+   'INSERT OR IGNORE INTO tasks(id,title,description,status,agent,result,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+   (tid,title[:200],description[:5000],status,agent,result[:3000],stamp,stamp)
+  ).rowcount
+ if inserted:
+  log('Task queued: '+title if status == 'queued' else 'Internal task recorded: '+title)
  return tid
-
 
 # Industry workspaces: structured, durable business/farm records and tutor workflows.
 # This MVP uses the existing local SQLite store. Add authenticated tenant isolation
