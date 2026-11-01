@@ -118,7 +118,8 @@ DEPARTMENTS = [
  {"id":"operations","name":"Operations & Customer Experience","head":"coo","positions":[
   {"title":"Operations Coordinator","agent_id":"ops"},{"title":"Customer Experience Specialist","agent_id":"design"}]}
 ]
-\nPOLL_SECONDS = max(5, int(os.getenv("COUNCIL_POLL_SECONDS", "15")))
+
+POLL_SECONDS = max(5, int(os.getenv("COUNCIL_POLL_SECONDS", "15")))
 MAX_DAILY_CALLS = max(12, int(os.getenv("COUNCIL_MAX_DAILY_CALLS", "36")))
 MAX_ATTEMPTS = max(1, int(os.getenv("COUNCIL_MAX_ATTEMPTS", "3")))
 stop = threading.Event()
