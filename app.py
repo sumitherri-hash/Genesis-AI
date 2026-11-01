@@ -104,6 +104,7 @@ def init_db():
   defaults={'autopilot':'false','last_cycle':'','mission':"Build a privacy-first, evidence-driven digital product company. Continuously discover urgent and expensive problems, validate willingness to pay, prioritize reachable customers and recurring value, build and test useful prototypes, measure outcomes, learn from failures, and improve the next cycle. Target ₹1 crore monthly revenue as an ambition, never as a guarantee. Autonomously research, build, test, and prepare mobile-first marketing campaigns and opt-in customer funnels. Never send unsolicited messages, scrape contacts, spend money, or publish through external accounts unless a verified owner-authorized channel and publishing policy are configured.",'workspace':'workspace'}
   for k,v in defaults.items(): c.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)',(k,v))
   c.execute('UPDATE settings SET value=? WHERE key=? AND value=?',(defaults['mission'],'mission','Operate as a privacy-first digital product company: discover useful problems, build and review prototypes, and deliver customer outcomes.'))
+  c.execute("UPDATE settings SET value=? WHERE key='mission' AND value LIKE '%Do not spend money, publish publicly, contact people%'", (defaults['mission'],))
  pathlib.Path(get_setting('workspace','workspace')).mkdir(parents=True,exist_ok=True)
 
 def require_admin(key):
