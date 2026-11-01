@@ -188,8 +188,8 @@ def _review(task_id):
                         "Autonomous internal product-build task generated after a high-confidence company review. "
                         "Build a small, usable, mobile-friendly MVP for this opportunity and create a practical "
                         "launch kit: README/setup guide, product brief, landing-page copy, app-store listing draft, pricing hypotheses, "
-                        "customer-validation plan, and FAQ. Include basic accessibility and acceptance checks. "
-                        "Keep the prototype self-contained where practical. Clearly label assumptions and anything "
+                        "customer-validation plan, FAQ, audience-specific campaign concepts, social post drafts, short-video scripts, opt-in signup funnel, onboarding sequence, and success metrics. Include basic accessibility and acceptance checks. "
+                        "Prepare a mobile-first customer acquisition plan. Keep the prototype self-contained where practical. Clearly label assumptions and anything "
                         "not tested. This is preparation only: do not publish, contact customers, accept payments, "
                         "create accounts, spend money, sign agreements, or modify production systems.\n\n"
                         "Approved internal next-step context: " + str(next_step.get("description", ""))[:2500]
