@@ -233,9 +233,8 @@ def create_task(title,description,agent='coordinator',task_id=None,status='queue
   log('Task queued: '+title if status == 'queued' else 'Internal task recorded: '+title)
  return tid
 
-# Industry workspaces: structured, durable business/farm records and tutor workflows.
-# This MVP uses the existing local SQLite store. Add authenticated tenant isolation
-# and managed persistent storage before using it for real customer financial records.
+# Industry workspaces: founder-key protected until proper per-user tenant authentication is deployed.
+# A shared admin key is NOT multi-user authentication; do not store customer-sensitive data yet.
 with db() as _c:
  _c.executescript("""
  CREATE TABLE IF NOT EXISTS workspaces(
@@ -264,7 +263,8 @@ def _workspace_public(row):
  return {'id':row['id'],'kind':row['kind'],'name':row['name'],'profile':json.loads(row['profile'] or '{}'),'created_at':row['created_at'],'updated_at':row['updated_at']}
 
 @app.post('/api/workspaces')
-def create_workspace(data:WorkspaceCreate):
+def create_workspace(data:WorkspaceCreate,x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  kind=data.kind.strip().lower()
  if kind not in ('business','farm','school'): raise HTTPException(400,'Choose business, farm, or school.')
  name=data.name.strip()
@@ -278,13 +278,15 @@ def create_workspace(data:WorkspaceCreate):
          'notice':'Prototype workspace. Do not store sensitive personal or payment data.'}
 
 @app.get('/api/workspaces')
-def list_workspaces():
+def list_workspaces(x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  with db() as c: rows=c.execute('SELECT * FROM workspaces ORDER BY updated_at DESC LIMIT 100').fetchall()
  return {'workspaces':[_workspace_public(x) for x in rows],
          'notice':'Prototype mode: workspace IDs are not authentication. Do not expose private records publicly.'}
 
 @app.get('/api/workspaces/{workspace_id}')
-def get_workspace(workspace_id:str):
+def get_workspace(workspace_id:str,x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  with db() as c:
   row=c.execute('SELECT * FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
   if not row: raise HTTPException(404,'Workspace not found.')
@@ -292,7 +294,8 @@ def get_workspace(workspace_id:str):
  return {'workspace':_workspace_public(row),'records':[{'id':x['id'],'kind':x['kind'],'payload':json.loads(x['payload']),'created_at':x['created_at']} for x in records]}
 
 @app.patch('/api/workspaces/{workspace_id}')
-def update_workspace(workspace_id:str,data:WorkspaceUpdate):
+def update_workspace(workspace_id:str,data:WorkspaceUpdate,x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  with db() as c:
   row=c.execute('SELECT id FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
   if not row: raise HTTPException(404,'Workspace not found.')
@@ -300,7 +303,8 @@ def update_workspace(workspace_id:str,data:WorkspaceUpdate):
  return {'ok':True,'workspace_id':workspace_id}
 
 @app.post('/api/workspaces/{workspace_id}/records')
-def add_workspace_record(workspace_id:str,data:RecordCreate):
+def add_workspace_record(workspace_id:str,data:RecordCreate,x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  kind=data.kind.strip().lower()
  allowed={'business':{'product','sale','purchase','expense','customer','note'},
           'farm':{'crop','input','expense','harvest','market_quote','task','note'},
@@ -316,7 +320,8 @@ def add_workspace_record(workspace_id:str,data:RecordCreate):
  return {'ok':True,'record_id':rid,'kind':kind,'created_at':stamp}
 
 @app.get('/api/workspaces/{workspace_id}/summary')
-def workspace_summary(workspace_id:str):
+def workspace_summary(workspace_id:str,x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
  with db() as c:
   row=c.execute('SELECT * FROM workspaces WHERE id=?',(workspace_id,)).fetchone()
   if not row: raise HTTPException(404,'Workspace not found.')
