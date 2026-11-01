@@ -710,6 +710,29 @@ def workspace_file(relative_path: str):
 @app.get('/api/privacy')
 def privacy():
  return {'privacy_mode':'minimal-data','personal_device_access':False,'permissions_requested_by_backend':[],'notes':['The backend only receives the request text and task status.','It does not access phone contacts, photos, messages, microphone, location, or other installed-app data.','The Android companion launches selected apps or opens shared links only after the user taps.','Provider API keys remain on the server and must never be entered into the mobile app.']}
+# Integration catalogue: OAuth is deliberately disabled until per-user authentication
+# and durable encrypted token storage are configured. Never share the founder's credentials.
+INTEGRATION_PROVIDERS = [
+ {'id':'google','name':'Google account','apps':['Gmail','Google Calendar','Google Drive','Google Maps','YouTube'],'category':'Essential','env':['GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET'],'note':'One Google OAuth consent flow; each user chooses exact scopes.'},
+ {'id':'instagram','name':'Instagram','apps':['Instagram','Facebook Pages'],'category':'Marketing','env':['META_APP_ID','META_APP_SECRET'],'note':'Requires eligible professional accounts, Meta app permissions and review.'},
+ {'id':'metricool','name':'Metricool','apps':['Metricool'],'category':'Marketing','env':['METRICOOL_CLIENT_ID','METRICOOL_CLIENT_SECRET'],'note':'Requires approved API/OAuth access for the account.'},
+ {'id':'windsor','name':'Windsor.ai','apps':['Windsor.ai'],'category':'Analytics','env':['WINDSOR_API_KEY'],'note':'Requires an owner-authorised API credential and provider terms review.'},
+ {'id':'vehicleq','name':'VehicleQ','apps':['VehicleQ'],'category':'Specialised','env':['VEHICLEQ_API_KEY'],'note':'Integration depends on a supported public/partner API.'},
+ {'id':'microsoft','name':'Microsoft account','apps':['Outlook','Microsoft Calendar','OneDrive'],'category':'Essential','env':['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET'],'note':'Requires Microsoft identity platform app registration.'},
+ {'id':'slack','name':'Slack','apps':['Slack'],'category':'Business','env':['SLACK_CLIENT_ID','SLACK_CLIENT_SECRET'],'note':'Requires workspace-admin OAuth consent.'},
+ {'id':'notion','name':'Notion','apps':['Notion'],'category':'Business','env':['NOTION_CLIENT_ID','NOTION_CLIENT_SECRET'],'note':'Requires user-authorised Notion integration.'},
+ {'id':'whatsapp','name':'WhatsApp Business','apps':['WhatsApp Business'],'category':'Business','env':['META_APP_ID','META_APP_SECRET'],'note':'Requires WhatsApp Business Platform setup and opt-in messaging.'}
+]
+@app.get('/api/integrations')
+def integration_catalogue(x_genesis_key:str|None=Header(default=None)):
+ require_admin(x_genesis_key)
+ return {'mode':'setup_only','user_accounts_ready':False,'oauth_enabled':False,
+  'notice':'GENESIS does not yet have per-user accounts or durable encrypted OAuth token storage. No provider is connected. Do not paste passwords or access tokens here.',
+  'providers':[{'id':p['id'],'name':p['name'],'apps':p['apps'],'category':p['category'],
+   'configuration_ready':all(bool(os.getenv(k,'' ).strip()) for k in p['env']),
+   'status':'credentials_configured_but_user_OAuth_not_implemented' if all(bool(os.getenv(k,'' ).strip()) for k in p['env']) else 'setup_required',
+   'note':p['note']} for p in INTEGRATION_PROVIDERS]}
+
 @app.post('/api/mission')
 def mission(data:MissionIn,x_genesis_key:str|None=Header(default=None)):
  require_admin(x_genesis_key); set_setting('mission',data.mission[:2000]); return {'ok':True,'mission':get_setting('mission')}
