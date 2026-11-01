@@ -67,7 +67,7 @@ class GenesisCoreTests(unittest.TestCase):
             encoding="utf-8"
         )
         (workspace / "styles.css").write_text("body { margin: 0; }", encoding="utf-8")
-        (workspace / "main.py").write_text("value = 42\\n", encoding="utf-8")
+        (workspace / "main.py").write_text("value = 42\n", encoding="utf-8")
         checks = app._validate_generated_files(
             workspace, ["index.html", "styles.css", "main.py"]
         )
@@ -88,7 +88,7 @@ class GenesisCoreTests(unittest.TestCase):
     def test_prototype_validator_flags_invalid_python(self):
         workspace = Path(_TEST_DIR.name) / "validator-python"
         workspace.mkdir(parents=True, exist_ok=True)
-        (workspace / "broken.py").write_text("def unfinished(:\\n", encoding="utf-8")
+        (workspace / "broken.py").write_text("def unfinished(:\n", encoding="utf-8")
         checks = app._validate_generated_files(workspace, ["broken.py"])
         self.assertEqual(checks[0]["status"], "failed")
         self.assertEqual(checks[0]["check"], "python_syntax")
