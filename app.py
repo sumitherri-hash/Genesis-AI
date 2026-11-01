@@ -123,9 +123,11 @@ def _llm_wait_for_slot():
   with _LLM_GATE_LOCK:
    now = time.monotonic()
    slot = max(now, _LLM_NEXT_SLOT, _LLM_COOLDOWN_UNTIL)
-   _LLM_NEXT_SLOT = slot + _LLM_MIN_INTERVAL
-  delay = slot - time.monotonic()
-  if delay <= 0: return
+   delay = slot - now
+   if delay <= 0:
+    _LLM_NEXT_SLOT = now + _LLM_MIN_INTERVAL
+    return
+  # Re-check after sleeping so a 429 cooldown set by another worker is respected.
   time.sleep(min(delay, 30))
 def _llm_set_cooldown(seconds):
  global _LLM_COOLDOWN_UNTIL, _LLM_NEXT_SLOT
