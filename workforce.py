@@ -51,7 +51,7 @@ def _init():
 def _queue_stage(project, index, previous):
  stage=STAGES[index]
  task_id=str(uuid.uuid4()); run_id=str(uuid.uuid4()); now=core.now()
- ctx={"project_id":project["id"],"project_title":project["title"],
+ ctx={"task_id":task_id,"project_id":project["id"],"project_title":project["title"],
       "company_objective":project["objective"],"priority":project["priority"],
       "department":stage["department"],"stage":stage["label"],
       "stage_goal":stage["goal"],"stage_number":index+1,"total_stages":len(STAGES),
@@ -128,6 +128,29 @@ def install(fastapi_app):
  def start_workforce():
   global thread
   _init()
+  # Start a bounded, evidence-led company project automatically on first boot.
+  # The marker prevents duplicate projects on ordinary restarts.
+  import os
+  if os.getenv("GENESIS_WORKFORCE_BOOTSTRAP", "false").lower() == "true" and core.get_setting("workforce_bootstrap_done", "false") != "true":
+   pid=str(uuid.uuid4()); now=core.now()
+   title="GENESIS launch: discover and validate one useful product opportunity"
+   objective=(
+    "Act as GENESIS's autonomous product company. Starting now, identify one specific, "
+    "important and realistically addressable problem affecting a broad group of people or small organisations. "
+    "Prioritise measurable pain, reachable users, low-cost delivery, accessibility and a credible path to recurring value. "
+    "Use the public-source intelligence signals already collected by GENESIS where available; distinguish source-backed "
+    "observations from assumptions. Do not claim live market research, interviews, customer demand or tests unless evidence "
+    "is actually present. Compare alternatives, identify what remains unknown, and design a small ethical validation plan "
+    "that requires no spending and no collection of private personal data. Then define a minimal useful product, architecture, "
+    "prototype plan, acceptance tests, privacy/security review and honest opt-in launch materials. Deliver a concise evidence-led "
+    "recommendation with explicit go/no-go criteria. Do not contact people, publish content, create accounts, spend money, "
+    "make purchases, sign agreements or change production systems. GENESIS is an AI system; never impersonate a human."
+   )
+   with core.db() as c:
+    c.execute("INSERT OR IGNORE INTO workforce_projects(id,title,objective,status,current_stage,priority,created_at,updated_at) VALUES(?,?,?,'queued',0,'high',?,?)",
+              (pid,title,objective,now,now))
+   core.set_setting("workforce_bootstrap_done", "true")
+   core.log("Autonomous company project bootstrapped: "+title)
   if thread and thread.is_alive(): return
   stop.clear()
   thread=threading.Thread(target=_loop,name="genesis-workforce-manager",daemon=True)
