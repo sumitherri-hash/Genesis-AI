@@ -45,6 +45,8 @@ services:
         value: "3"
       - key: COUNCIL_MISSION_INTERVAL_SECONDS
         value: "21600"
+      - key: GENESIS_WORKFORCE_BOOTSTRAP
+        value: "true"
       - key: COMPANY_LOOP_POLL_SECONDS
         value: "20"
       - key: COMPANY_MEMORY_LIMIT
