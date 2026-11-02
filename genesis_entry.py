@@ -11,6 +11,7 @@ import corporate_os
 import workforce
 import intelligence
 import business_ops
+import action_center
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -42,6 +43,7 @@ corporate_os.install(app)
 workforce.install(app)
 intelligence.install(app)
 business_ops.install(app)
+action_center.install(app)
 
 @app.get('/account')
 def account_page():
@@ -67,3 +69,8 @@ def intelligence_page():
 def operations_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'business_ops.html').read_text(encoding='utf-8'))
+
+@app.get('/actions')
+def action_center_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'action_center.html').read_text(encoding='utf-8'))
