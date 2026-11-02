@@ -10,6 +10,7 @@ import auth_hub
 import corporate_os
 import workforce
 import intelligence
+import business_ops
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -40,6 +41,7 @@ auth_hub.install(app)
 corporate_os.install(app)
 workforce.install(app)
 intelligence.install(app)
+business_ops.install(app)
 
 @app.get('/account')
 def account_page():
@@ -60,3 +62,8 @@ def workforce_page():
 def intelligence_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'intelligence.html').read_text(encoding='utf-8'))
+
+@app.get('/operations')
+def operations_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'business_ops.html').read_text(encoding='utf-8'))
