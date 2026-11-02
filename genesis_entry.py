@@ -48,3 +48,8 @@ def account_page():
 def corporate_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'corporate.html').read_text(encoding='utf-8'))
+
+@app.get('/workforce')
+def workforce_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'workforce.html').read_text(encoding='utf-8'))
