@@ -19,7 +19,9 @@ STAGES = [
  {"department":"quality","agent":"qa","label":"Quality and acceptance review","goal":"Define acceptance criteria, test cases, edge cases and release blockers."},
  {"department":"quality","agent":"security","label":"Security and privacy review","goal":"Review data minimization, privacy, abuse, security and operational risks."},
  {"department":"marketing","agent":"growth","label":"Go-to-market preparation","goal":"Prepare honest positioning, opt-in marketing experiments and launch materials; do not publish or contact anyone."},
- {"department":"operations","agent":"ops","label":"Operations and executive synthesis","goal":"Synthesize prior department outputs, recommend go/no-go, owners, metrics and next actions."}
+ {"department":"design","agent":"design","label":"Experience and accessibility design","goal":"Define the product user journey, mobile-first screens, accessibility requirements, onboarding and design acceptance criteria."},
+ {"department":"finance","agent":"finance","label":"Cost and business model review","goal":"Estimate infrastructure and delivery cost drivers, pricing hypotheses and break-even assumptions. Clearly label estimates; never promise revenue."},
+ {"department":"operations","agent":"ops","label":"Operations and executive synthesis","goal":"Synthesize all department outputs, recommend go/no-go, owners, metrics, risks and next actions."}
 ]
 stop=threading.Event()
 thread=None
