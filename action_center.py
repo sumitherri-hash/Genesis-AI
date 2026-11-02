@@ -208,17 +208,22 @@ def install(app):
                     (str(uuid.uuid4()), action_id, "integrity_error",
                      "Payload hash mismatch; action blocked.", core.now())
                 )
-                raise HTTPException(409, "Payload integrity check failed; action blocked.")
-            status = "approved_not_executed" if data.decision == "approve" else "rejected"
-            stamp = core.now()
-            c.execute(
-                "UPDATE action_queue SET status=?,decided_at=?,decision_note=? WHERE id=?",
-                (status, stamp, data.note, action_id)
-            )
-            c.execute(
-                "INSERT INTO action_audit VALUES(?,?,?,?,?)",
-                (str(uuid.uuid4()), action_id, data.decision, data.note[:500], stamp)
-            )
+                integrity_failed = True
+                status = "integrity_error"
+            else:
+                integrity_failed = False
+                status = "approved_not_executed" if data.decision == "approve" else "rejected"
+                stamp = core.now()
+                c.execute(
+                    "UPDATE action_queue SET status=?,decided_at=?,decision_note=? WHERE id=?",
+                    (status, stamp, data.note, action_id)
+                )
+                c.execute(
+                    "INSERT INTO action_audit VALUES(?,?,?,?,?)",
+                    (str(uuid.uuid4()), action_id, data.decision, data.note[:500], stamp)
+                )
+        if integrity_failed:
+            raise HTTPException(409, "Payload integrity check failed; action blocked.")
         return {
             "id": action_id,
             "status": status,
