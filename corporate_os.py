@@ -54,6 +54,11 @@ class DecisionIn(BaseModel):
     decision: str
     note: str = ""
 
+class ApprovalIn(BaseModel):
+    work_order_id: str
+    action_type: str = Field(min_length=3, max_length=100)
+    summary: str = Field(min_length=5, max_length=2000)
+
 def _init():
     agent_council._init()
     with core.db() as c:
@@ -127,7 +132,7 @@ def install(fastapi_app):
         description = ("Department: "+dept["name"]+"\nDepartment mission: "+dept["mission"]+
                        "\nPriority: "+data.priority+"\nRequested by: "+data.requested_by+
                        "\n\nWork order:\n"+data.description)
-        core.create_task("[COMPANY] "+data.title, description, agent=dept["agent_id"], task_id=task_id)
+        core.create_task("[COMPANY] "+data.title, description, agent=dept["agent_id"], task_id=task_id, status="delegated")
         lessons=[]
         try:
             with core.db() as c:
@@ -150,6 +155,17 @@ def install(fastapi_app):
         core.log("Company work order assigned: "+data.title+" → "+dept["name"])
         return {"work_order_id":order_id,"task_id":task_id,"department":dept["name"],
                 "assigned_agent":agent["name"],"status":"queued"}
+
+    @fastapi_app.post("/api/internal/company/approvals")
+    def create_approval(data: ApprovalIn, x_genesis_key: str | None = Header(default=None)):
+        _admin(x_genesis_key); _init()
+        with core.db() as c:
+            exists = c.execute("SELECT 1 FROM company_work_orders WHERE id=?", (data.work_order_id,)).fetchone()
+            if not exists: raise HTTPException(404, "Work order not found")
+            approval_id = str(uuid.uuid4())
+            c.execute("INSERT INTO company_approvals(id,work_order_id,action_type,summary,status,created_at) VALUES(?,?,?,?,?,?)",
+                      (approval_id,data.work_order_id,data.action_type,data.summary,"pending",core.now()))
+        return {"id":approval_id,"status":"pending","note":"Awaiting founder decision; no external action has been performed."}
 
     @fastapi_app.get("/api/internal/company/approvals")
     def list_approvals(x_genesis_key: str | None = Header(default=None)):
