@@ -19,9 +19,12 @@ STAGES = [
  {"department":"quality","agent":"qa","label":"Quality and acceptance review","goal":"Define acceptance criteria, test cases, edge cases and release blockers."},
  {"department":"quality","agent":"security","label":"Security and privacy review","goal":"Review data minimization, privacy, abuse, security and operational risks."},
  {"department":"marketing","agent":"growth","label":"Go-to-market preparation","goal":"Prepare honest positioning, opt-in marketing experiments and launch materials; do not publish or contact anyone."},
+ {"department":"operations","agent":"ops","label":"Operations checkpoint","goal":"Review current progress, unresolved evidence gaps, project risks and whether the team should continue."},
  {"department":"design","agent":"design","label":"Experience and accessibility design","goal":"Define the product user journey, mobile-first screens, accessibility requirements, onboarding and design acceptance criteria."},
  {"department":"finance","agent":"finance","label":"Cost and business model review","goal":"Estimate infrastructure and delivery cost drivers, pricing hypotheses and break-even assumptions. Clearly label estimates; never promise revenue."},
- {"department":"operations","agent":"ops","label":"Operations and executive synthesis","goal":"Synthesize all department outputs, recommend go/no-go, owners, metrics, risks and next actions."}
+ {"department":"engineering","agent":"builder","label":"Prototype implementation","goal":"Use the evidence, product brief, architecture, design and cost review to build a small usable prototype or validation pack in the confined workspace."},
+ {"department":"quality","agent":"qa","label":"Prototype acceptance review","goal":"Review the prototype deliverables and automated checks. Identify missing requirements, defects, accessibility gaps and release blockers; do not claim runtime testing unless performed."},
+ {"department":"operations","agent":"ops","label":"Final CEO synthesis","goal":"Synthesize all 12 specialist roles and prototype/QA results. Recommend go/no-go, next actions, owners, metrics and risks."}
 ]
 stop=threading.Event()
 thread=None
