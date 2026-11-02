@@ -9,6 +9,7 @@ import whatsapp_integration
 import auth_hub
 import corporate_os
 import workforce
+import intelligence
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -38,6 +39,7 @@ whatsapp_integration.install(app)
 auth_hub.install(app)
 corporate_os.install(app)
 workforce.install(app)
+intelligence.install(app)
 
 @app.get('/account')
 def account_page():
@@ -53,3 +55,8 @@ def corporate_page():
 def workforce_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'workforce.html').read_text(encoding='utf-8'))
+
+@app.get('/intelligence')
+def intelligence_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'intelligence.html').read_text(encoding='utf-8'))
