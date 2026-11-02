@@ -8,6 +8,7 @@ import company_loop
 import whatsapp_integration
 import auth_hub
 import corporate_os
+import workforce
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -36,6 +37,7 @@ company_loop.install(app)
 whatsapp_integration.install(app)
 auth_hub.install(app)
 corporate_os.install(app)
+workforce.install(app)
 
 @app.get('/account')
 def account_page():
