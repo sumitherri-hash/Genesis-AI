@@ -63,6 +63,19 @@ def _queue_stage(project, index, previous):
       "Never request personal data or secrets.","Do not publish, send messages, spend money, sign agreements or alter production."]}
  core.create_task("[COMPANY] "+project["title"]+" — "+stage["label"],
                   json.dumps(ctx,ensure_ascii=False)[:4900],agent=stage["agent"],task_id=task_id,status="delegated")
+ # The builder also runs GENESIS's constrained artifact generator, so this stage
+ # can produce real prototype files or a validation pack rather than a plan only.
+ if stage["agent"]=="builder":
+  execution_task_id=str(uuid.uuid4())
+  build_request={"project_title":project["title"],"company_objective":project["objective"],
+   "prior_deliverables":previous,
+   "instructions":"Create a small usable mobile-first MVP only if prior evidence supports building; otherwise create a validation pack. Include README, product brief, validation plan and tests. Do not invent interviews or claim runtime tests. No tracking, external messaging, payments or publishing."}
+  ctx["prototype_executor_task_id"]=execution_task_id
+  core.create_task("[AUTO] Prototype build — "+project["title"],
+                   json.dumps(build_request,ensure_ascii=False)[:4900],
+                   agent="builder",task_id=execution_task_id,status="queued")
+  threading.Thread(target=core.process_task_id,args=(execution_task_id,),
+                   name="genesis-prototype-builder",daemon=True).start()
  with core.db() as c:
   c.execute("INSERT INTO workforce_stage_runs(id,project_id,stage_index,task_id,agent_id,label,status,created_at,updated_at) VALUES(?,?,?,?,?,?, 'queued',?,?)",
             (run_id,project["id"],index,task_id,stage["agent"],stage["label"],now,now))
@@ -85,7 +98,7 @@ def _advance_projects():
     continue
    last=stages[-1]
    with core.db() as c:
-    job=c.execute("SELECT status,output_json,error FROM council_jobs WHERE task_id=? AND agent_id=?",(last["task_id"],last["agent_id"])).fetchone()
+    job=c.execute("SELECT status,output_json,error,input_json FROM council_jobs WHERE task_id=? AND agent_id=?",(last["task_id"],last["agent_id"])).fetchone()
    if not job: continue
    if job["status"] in ("failed","paused_budget"):
     with core.db() as c:
@@ -93,6 +106,23 @@ def _advance_projects():
      c.execute("UPDATE workforce_projects SET status=?,updated_at=? WHERE id=?",(job["status"],core.now(),project["id"]))
     continue
    if job["status"]!="completed": continue
+   prototype_result=None
+   if last["agent_id"]=="builder":
+    try: prototype_task_id=json.loads(job["input_json"] or "{}").get("prototype_executor_task_id","")
+    except Exception: prototype_task_id=""
+    if prototype_task_id:
+     with core.db() as c:
+      prototype_task=c.execute("SELECT status,result,error FROM tasks WHERE id=?",(prototype_task_id,)).fetchone()
+     if not prototype_task: continue
+     if prototype_task["status"]=="failed":
+      with core.db() as c:
+       c.execute("UPDATE workforce_stage_runs SET status='failed',updated_at=? WHERE id=?",(core.now(),last["id"]))
+       c.execute("UPDATE workforce_projects SET status='failed',updated_at=? WHERE id=?",(core.now(),project["id"]))
+      core.log("Prototype artifact generation failed for project: "+project["title"],"WARN")
+      continue
+     if prototype_task["status"]!="completed": continue
+     try: prototype_result=json.loads(prototype_task["result"] or "{}")
+     except Exception: prototype_result={"result":prototype_task["result"]}
    with core.db() as c:
     c.execute("UPDATE workforce_stage_runs SET status='completed',updated_at=? WHERE id=?",(core.now(),last["id"]))
    if last["stage_index"]+1 >= len(STAGES):
@@ -103,6 +133,8 @@ def _advance_projects():
      if row:
       try: outputs.append({"stage":stage["label"],"agent":stage["agent_id"],"deliverable":json.loads(row["output_json"])})
       except Exception: pass
+    if prototype_result:
+     outputs.append({"stage":"Prototype artifact generation","agent":"builder_executor","deliverable":prototype_result})
     with core.db() as c:
      c.execute("UPDATE workforce_projects SET status='completed',final_summary=?,updated_at=? WHERE id=?",
                (json.dumps(outputs,ensure_ascii=False)[:20000],core.now(),project["id"]))
@@ -115,6 +147,8 @@ def _advance_projects():
      if row:
       try: outputs.append({"stage":stage["label"],"agent":stage["agent_id"],"deliverable":json.loads(row["output_json"])})
       except Exception: pass
+    if prototype_result:
+     outputs.append({"stage":"Prototype artifact generation","agent":"builder_executor","deliverable":prototype_result})
     _queue_stage(project,last["stage_index"]+1,outputs)
 
 def _loop():
