@@ -7,6 +7,7 @@ import agent_council
 import company_loop
 import whatsapp_integration
 import auth_hub
+import corporate_os
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
@@ -34,8 +35,14 @@ agent_council.install(app)
 company_loop.install(app)
 whatsapp_integration.install(app)
 auth_hub.install(app)
+corporate_os.install(app)
 
 @app.get('/account')
 def account_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'account.html').read_text(encoding='utf-8'))
+
+@app.get('/company')
+def corporate_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'corporate.html').read_text(encoding='utf-8'))
