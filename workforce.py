@@ -107,7 +107,10 @@ def _advance_projects():
    with core.db() as c:
     job=c.execute("SELECT status,output_json,error,input_json FROM council_jobs WHERE task_id=? AND agent_id=?",(last["task_id"],last["agent_id"])).fetchone()
    if not job: continue
-   if job["status"] in ("failed","paused_budget"):
+   if job["status"]=="paused_budget":
+    # Keep this project active; specialist work may resume after the provider budget resets.
+    continue
+   if job["status"]=="failed":
     with core.db() as c:
      c.execute("UPDATE workforce_stage_runs SET status=?,updated_at=? WHERE id=?",(job["status"],core.now(),last["id"]))
      c.execute("UPDATE workforce_projects SET status=?,updated_at=? WHERE id=?",(job["status"],core.now(),project["id"]))
