@@ -13,21 +13,78 @@ import intelligence
 import business_ops
 import action_center
 
+
 @app.get("/api/readiness")
 def readiness():
     import os
+    import pathlib
     import app as core
-    provider_key = bool(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY"))
-    autopilot = core.get_setting("autopilot", "false").lower() == "true"
+    import agent_council
+    import workforce
+    db_path = pathlib.Path(core.DB_PATH).expanduser().resolve()
+    persistent_root = pathlib.Path(os.getenv("RENDER_DISK_PATH", "/var/data")).resolve()
+    try:
+        persistent_storage = persistent_root in db_path.parents or db_path == persistent_root
+    except Exception:
+        persistent_storage = False
+    provider_configured = bool(core.LLM_API_KEY)
+    with core.db() as conn:
+        last_ai_test = core.get_setting("last_successful_ai_test", "")
     return {
         "service": "online",
-        "ai_provider_configured": provider_key,
-        "autopilot_enabled": autopilot,
-        "background_systems": ["agent_council", "company_loop", "workforce", "intelligence"],
+        "ai_provider_configured": provider_configured,
+        "ai_provider_response_verified": bool(last_ai_test),
+        "last_successful_ai_test": last_ai_test or None,
+        "autopilot_enabled": core.get_setting("autopilot", "false").lower() == "true",
+        "autonomous_worker_threads": {
+            "council": sum(1 for t in agent_council.threads if t.is_alive()),
+            "council_expected": len(agent_council.AGENTS) + 2,
+            "workforce_manager": bool(workforce.thread and workforce.thread.is_alive())
+        },
+        "database": {
+            "engine": "sqlite",
+            "path_configured": str(db_path),
+            "persistent_disk_detected": persistent_storage,
+            "warning": None if persistent_storage else "SQLite is on ephemeral storage; data may be lost on restart."
+        },
+        "hosting": {
+            "plan": os.getenv("RENDER_PLAN", "free_or_unknown"),
+            "guaranteed_24_7": False
+        },
         "external_actions": "approval_gated",
         "certification": "not_certified",
-        "blockers": [name for name, ok in [("AI provider key missing", provider_key)] if not ok]
+        "blockers": [
+            name for name, ok in [
+                ("AI provider key missing", provider_configured),
+                ("AI response has not passed self-test", bool(last_ai_test)),
+                ("Persistent database storage not detected", persistent_storage)
+            ] if not ok
+        ]
     }
+
+
+@app.post("/api/internal/ai-self-test")
+def ai_self_test(x_genesis_key: str | None = Header(default=None)):
+    import app as core
+    core.require_admin(x_genesis_key)
+    started = core.now()
+    try:
+        answer = core.llm([
+            {"role": "system", "content": "You are a connectivity test. Reply with exactly GENESIS_AI_OK."},
+            {"role": "user", "content": "Confirm the AI provider connection."}
+        ], 0.0)
+        if "GENESIS_AI_OK" not in str(answer):
+            raise RuntimeError("Provider responded, but the expected test phrase was missing.")
+        core.set_setting("last_successful_ai_test", core.now())
+        core.log("AI provider self-test passed.")
+        return {"status": "passed", "started_at": started, "finished_at": core.now(),
+                "provider_response_verified": True, "secret_values_exposed": False}
+    except Exception as exc:
+        core.log("AI provider self-test failed: " + str(exc)[:500], "WARN")
+        return {"status": "failed", "started_at": started, "finished_at": core.now(),
+                "provider_response_verified": False, "error": str(exc)[:500],
+                "secret_values_exposed": False}
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
