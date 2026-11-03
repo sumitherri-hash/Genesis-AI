@@ -51,6 +51,10 @@ def _init():
    UNIQUE(project_id,stage_index)
   );
   CREATE INDEX IF NOT EXISTS idx_workforce_projects_status ON workforce_projects(status,updated_at);
+  CREATE TABLE IF NOT EXISTS workforce_project_sources(
+   signal_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, source_link TEXT NOT NULL,
+   created_at TEXT NOT NULL
+  );
   """)
 
 def _queue_stage(project, index, previous):
@@ -154,9 +158,63 @@ def _advance_projects():
      outputs.append({"stage":"Prototype artifact generation","agent":"builder_executor","deliverable":prototype_result})
     _queue_stage(project,last["stage_index"]+1,outputs)
 
+def _seed_next_project():
+ """Create the next bounded internal project from public signals after the current portfolio clears."""
+ if core.get_setting("autopilot", "false").lower() != "true":
+  return
+ _init()
+ now=core.now()
+ with core.db() as c:
+  active=c.execute("SELECT COUNT(*) n FROM workforce_projects WHERE status IN ('queued','in_progress')").fetchone()["n"]
+  if active:
+   return
+  last=core.get_setting("workforce_last_auto_project_at","")
+  if last:
+   try:
+    from datetime import datetime, timezone
+    elapsed=(datetime.now(timezone.utc)-datetime.fromisoformat(last.replace("Z","+00:00"))).total_seconds()
+    if elapsed < max(21600,int(__import__("os").getenv("WORKFORCE_PROJECT_INTERVAL_SECONDS","21600"))):
+     return
+   except Exception:
+    return
+  signal=c.execute("""
+   SELECT s.* FROM intelligence_signals s
+   LEFT JOIN workforce_project_sources p ON p.signal_id=s.id
+   WHERE p.signal_id IS NULL AND s.score >= 40
+   ORDER BY s.score DESC,s.first_seen DESC LIMIT 1
+  """).fetchone()
+  if not signal:
+   return
+  signal=dict(signal)
+  pid=str(uuid.uuid4())
+  title="Opportunity research: "+signal["title"][:145]
+  objective=(
+   "Investigate this public-source opportunity as an AI-operated product company. "
+   "Treat the linked item as a research lead, not proof of customer demand. Separate source facts, "
+   "reasonable hypotheses and unknowns. Identify who experiences the problem, how existing alternatives "
+   "work, what evidence would validate urgency and willingness to pay, and whether a low-cost accessible "
+   "prototype is justified. Prefer a small useful product with measurable outcomes. Build only after "
+   "the research stages justify it; otherwise deliver a validation pack and explicit no-go criteria. "
+   "Use no private personal data, interviews fabricated by the model, unsolicited contact, spending, "
+   "publishing, account creation, contracts or production changes. "
+   "\nPublic signal: "+signal["title"]+
+   "\nSource: "+signal["source"]+
+   "\nLink: "+signal["link"]+
+   "\nPublished: "+signal["published"]+
+   "\nSummary: "+signal["summary"][:1500]
+  )
+  c.execute("INSERT INTO workforce_projects(id,title,objective,status,current_stage,priority,created_at,updated_at) VALUES(?,?,?,'queued',0,'normal',?,?)",
+            (pid,title,objective,now,now))
+  c.execute("INSERT INTO workforce_project_sources(signal_id,project_id,source_link,created_at) VALUES(?,?,?,?)",
+            (signal["id"],pid,signal["link"],now))
+ core.set_setting("workforce_last_auto_project_at",now)
+ core.log("CEO portfolio loop opened next evidence-led project from public signal: "+title)
+
 def _loop():
  while not stop.is_set():
-  try: _advance_projects()
+  try:
+   _advance_projects()
+   _seed_next_project()
   except Exception as exc:
    try: core.log("Workforce manager error: "+str(exc)[:500],"WARN")
    except Exception: pass
