@@ -13,6 +13,22 @@ import intelligence
 import business_ops
 import action_center
 
+@app.get("/api/readiness")
+def readiness():
+    import os
+    import app as core
+    provider_key = bool(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    autopilot = core.get_setting("autopilot", "false").lower() == "true"
+    return {
+        "service": "online",
+        "ai_provider_configured": provider_key,
+        "autopilot_enabled": autopilot,
+        "background_systems": ["agent_council", "company_loop", "workforce", "intelligence"],
+        "external_actions": "approval_gated",
+        "certification": "not_certified",
+        "blockers": [name for name, ok in [("AI provider key missing", provider_key)] if not ok]
+    }
+
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
 
