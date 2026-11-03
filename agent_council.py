@@ -288,9 +288,25 @@ def _run_job(agent, job):
         core.log(f"Council agent {agent['id']} failed (attempt {job['attempt'] + 1}): {error}", "WARN")
 
 
+def _recover_paused_budget_jobs():
+    """Resume older paused jobs when the next UTC-day budget is available."""
+    if not core.LLM_API_KEY or _today_calls() >= MAX_DAILY_CALLS:
+        return
+    today = date.today().isoformat()
+    with core.db() as c:
+        changed = c.execute(
+            "UPDATE council_jobs SET status='queued',error='',updated_at=? "
+            "WHERE status='paused_budget' AND substr(updated_at,1,10) < ?",
+            (core.now(), today)
+        ).rowcount
+    if changed:
+        core.log("Resumed " + str(changed) + " specialist jobs after daily budget reset.")
+
+
 def _agent_loop(agent):
     while not stop.is_set():
         try:
+            _recover_paused_budget_jobs()
             job = _claim(agent["id"])
             if job:
                 _run_job(agent, job)
