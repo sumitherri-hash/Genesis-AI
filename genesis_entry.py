@@ -12,6 +12,7 @@ import workforce
 import intelligence
 import business_ops
 import action_center
+import memory_engine
 
 
 @app.get("/api/readiness")
@@ -117,6 +118,7 @@ workforce.install(app)
 intelligence.install(app)
 business_ops.install(app)
 action_center.install(app)
+memory_engine.install(app)
 
 @app.get('/account')
 def account_page():
