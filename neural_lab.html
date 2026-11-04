@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GENESIS Neural Lab</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#080d18;color:#edf3ff}
+body{margin:0;padding:28px;max-width:980px;margin-inline:auto}h1{font-size:clamp(2rem,6vw,3.4rem);margin:.2em 0}p{color:#aebbd0;line-height:1.6}.tag{display:inline-block;border:1px solid #34435e;border-radius:999px;padding:7px 12px;color:#9de4d1}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:24px}.card{background:#111b2d;border:1px solid #253550;border-radius:18px;padding:20px}.card h2{font-size:1.2rem}.muted{color:#9eacc2;font-size:.92rem}.status{margin-top:22px;padding:16px;border-radius:12px;background:#14243a}.small{font-size:.85rem;color:#aebbd0}
+</style></head><body>
+<span class="tag">GENESIS · RESEARCH MODULE</span><h1>Neural Lab</h1>
+<p>Three optional model families for pattern learning. They are tools for specific tasks—not a replacement for GENESIS's language model, evidence checks, or human review.</p>
+<div class="grid">
+<section class="card"><h2>Autoencoders</h2><p>Compress numeric inputs into a smaller representation and reconstruct them. Reconstruction error can help flag unusual business or quality metrics.</p><p class="muted">Requires representative training data and validation.</p></section>
+<section class="card"><h2>Recurrent Neural Networks</h2><p>Process ordered sequences. Potential uses include time-series trends, demand forecasting, and sequence classification.</p><p class="muted">Compare against simple forecasting baselines before trusting predictions.</p></section>
+<section class="card"><h2>Variational Autoencoders</h2><p>Learn a probabilistic latent space and generate synthetic numeric samples for controlled experiments.</p><p class="muted">Synthetic output is never real-world evidence.</p></section>
+</div>
+<div class="status" id="runtime">Checking neural runtime…</div>
+<p class="small">Privacy and safety: this module does not train itself on personal data. Training and external actions require explicit authorization.</p>
+<script>
+(async()=>{const box=document.getElementById('runtime');try{const r=await fetch('/api/neural/public-status');const d=await r.json();box.textContent=d.ready?'Runtime: PyTorch available. Model training is not yet configured.':'Runtime: architecture catalog installed; optional PyTorch package is not installed on this lightweight server.';}catch(e){box.textContent='Runtime status unavailable. The model definitions are optional and may not be enabled on this server.';}})();
+</script></body></html>
