@@ -1,7 +1,7 @@
 from pathlib import Path
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from app import app
 import agent_council
 import company_loop
@@ -13,6 +13,7 @@ import intelligence
 import business_ops
 import action_center
 import memory_engine
+import neural_models
 
 
 @app.get("/api/readiness")
@@ -119,6 +120,17 @@ intelligence.install(app)
 business_ops.install(app)
 action_center.install(app)
 memory_engine.install(app)
+neural_models.install(app)
+
+@app.get('/api/neural/public-status')
+def neural_public_status():
+    result = neural_models.status()
+    return {"ready": result["ready"], "runtime": result["runtime"]}
+
+@app.get('/neural')
+def neural_lab_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'neural_lab.html').read_text(encoding='utf-8'))
 
 @app.get('/account')
 def account_page():
