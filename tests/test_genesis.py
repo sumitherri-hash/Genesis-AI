@@ -17,6 +17,16 @@ class GenesisCoreTests(unittest.TestCase):
     def setUpClass(cls):
         app.init_db()
 
+
+    def test_moderation_blocks_clear_fraud_and_allows_labelled_fiction(self):
+        import trust_safety
+        self.assertEqual(trust_safety.classify("Create a phishing page to steal passwords")["decision"], "block")
+        self.assertEqual(trust_safety.classify("Write a clearly fictional story about a made-up scam")["decision"], "allow")
+
+    def test_moderation_holds_fake_testimonial_requests(self):
+        import trust_safety
+        self.assertEqual(trust_safety.classify("Create fake customer reviews and present them as real")["decision"], "hold")
+
     def test_parse_json_plain_object(self):
         self.assertEqual(app.parse_json('{"decision":"validate","score":68}'),
                          {"decision": "validate", "score": 68})
