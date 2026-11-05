@@ -455,7 +455,7 @@ def build(task):
  update_task_progress(task['id'],'Preparing your request and selecting the right deliverable…')
  workspace=pathlib.Path(get_setting('workspace','workspace')).resolve()
  workspace.mkdir(parents=True,exist_ok=True)
- prompt=f'''Complete the user's actual request, not just a software-building interpretation. Infer the best deliverable from the message:
+ prompt=f'''Complete the user's actual request, not just a software-building interpretation. Start by interpreting the user's explicit goal, audience, intended use, constraints, style and mood cues. Respect preferences stated in this prompt and any consented project context available to this task; do not infer sensitive traits, claim certainty about emotions, or invent personal history. If a style or preference is unclear but not essential, make a sensible clearly stated creative choice. Produce the useful deliverable directly. Infer the best deliverable from the message:
 - For a question or explanation, answer it directly and clearly.
 - For writing, create the requested text.
 - For planning, analysis, research, or brainstorming, provide useful structured output and clearly label assumptions/evidence limits.
