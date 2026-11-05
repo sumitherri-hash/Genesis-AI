@@ -85,3 +85,15 @@ The software can work without the dashboard open, but a process cannot run after
 - Google OAuth credentials and Google consent-screen approval are still administrator setup tasks. Other providers are catalogue-only and remain marked Coming Soon until their official OAuth/API adapters, provider credentials and reviews are completed.
 - Google Maps generally uses a separate Maps Platform API key/billing model, not this Google user OAuth consent. VehicleQ support must be confirmed with its provider.
 - This beta account system is not a claim of complete production multi-tenant certification. Do not store sensitive personal, financial, health or children's data.
+
+
+## Creative Studio and ethical growth tools
+
+- Open `/studio` for the GENESIS Creative + Growth Studio.
+- `media_studio.py` adds an optional Replicate adapter for image and video models. It is disabled by default.
+- To enable it, an authorized administrator must configure `REPLICATE_API_TOKEN`, `REPLICATE_IMAGE_MODEL` and/or `REPLICATE_VIDEO_MODEL`, then explicitly set `GENESIS_MEDIA_ENABLED=true` and `GENESIS_MEDIA_BILLING_APPROVED=true` only after reviewing provider terms, model permissions and possible charges. Keep the token server-side. Do not enable paid generation without the account owner's permission and appropriate adult oversight.
+- Models differ in their input schemas. The adapter currently sends a `prompt` input; a model requiring additional inputs needs a model-specific adapter before it can be used reliably.
+- `growth_studio.py` prepares product positioning, customer-segment hypotheses, validation questions, draft posts/ads, and a seven-day experiment. It does not post, buy ads, scrape profiles, send messages, or promise revenue.
+- User preferences should be based on explicit prompt details and consented saved preferences. Do not infer sensitive traits or claim to know a user's feelings.
+- No Twitter/X account, Google Business Profile, ad account, or public listing is created automatically. External account creation, publishing, paid promotion, and customer outreach require an authorized account owner to review and approve each action.
+- These modules are an integration foundation, not evidence that external media providers, social platforms, or Google publishing are already connected.
