@@ -1,9 +1,9 @@
 {
-  "id": "/console",
-  "name": "GENESIS AI Command Center",
+  "id": "/",
+  "name": "GENESIS AI Workspace",
   "short_name": "GENESIS",
   "description": "Cross-device command center for GENESIS AI agents and company workflows.",
-  "start_url": "/console",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
