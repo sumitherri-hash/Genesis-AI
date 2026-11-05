@@ -173,3 +173,8 @@ def action_center_page():
 
 media_studio.install(app)
 growth_studio.install(app)
+
+@app.get('/studio')
+def creative_studio_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'media_studio.html').read_text(encoding='utf-8'))
