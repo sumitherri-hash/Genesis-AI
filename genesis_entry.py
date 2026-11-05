@@ -91,6 +91,10 @@ def ai_self_test(x_genesis_key: str | None = Header(default=None)):
                 "secret_values_exposed": False}
 
 
+@app.get('/hub')
+def company_hub_page():
+    return HTMLResponse((BASE_DIR / 'company_hub.html').read_text(encoding='utf-8'))
+
 @app.get('/learn')
 def learning_adventure_page():
     return HTMLResponse((BASE_DIR / 'education.html').read_text(encoding='utf-8'))
