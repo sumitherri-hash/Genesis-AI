@@ -15,6 +15,8 @@ import action_center
 import memory_engine
 import neural_models
 import trust_safety
+import media_studio
+import growth_studio
 
 
 @app.get("/api/readiness")
@@ -168,3 +170,6 @@ def operations_page():
 def action_center_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'action_center.html').read_text(encoding='utf-8'))
+
+media_studio.install(app)
+growth_studio.install(app)
