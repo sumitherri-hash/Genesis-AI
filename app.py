@@ -107,11 +107,13 @@ def init_db():
  with db() as c:
   c.executescript('''
   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL,status TEXT NOT NULL,agent TEXT NOT NULL,result TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT DEFAULT '');
+  CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL,status TEXT NOT NULL,agent TEXT NOT NULL,result TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT DEFAULT '',progress TEXT DEFAULT '');
   CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY,title TEXT NOT NULL,source TEXT DEFAULT '',summary TEXT NOT NULL,score INTEGER DEFAULT 0,created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,status TEXT NOT NULL,summary TEXT DEFAULT '',created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS logs(id INTEGER PRIMARY KEY AUTOINCREMENT,level TEXT NOT NULL,message TEXT NOT NULL,created_at TEXT NOT NULL);
   ''')
+  task_columns={row['name'] for row in c.execute('PRAGMA table_info(tasks)').fetchall()}
+  if 'progress' not in task_columns: c.execute("ALTER TABLE tasks ADD COLUMN progress TEXT DEFAULT ''")
   defaults={'autopilot':'false','last_cycle':'','mission':"Build a privacy-first, evidence-driven digital product company. Continuously discover urgent and expensive problems, validate willingness to pay, prioritize reachable customers and recurring value, build and test useful prototypes, measure outcomes, learn from failures, and improve the next cycle. Target ₹1 crore monthly revenue as an ambition, never as a guarantee. Autonomously research, build, test, and prepare mobile-first marketing campaigns and opt-in customer funnels. Never send unsolicited messages, scrape contacts, spend money, or publish through external accounts unless a verified owner-authorized channel and publishing policy are configured.",'workspace':'workspace'}
   for k,v in defaults.items(): c.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)',(k,v))
   c.execute('UPDATE settings SET value=? WHERE key=? AND value=?',(defaults['mission'],'mission','Operate as a privacy-first digital product company: discover useful problems, build and review prototypes, and deliver customer outcomes.'))
@@ -177,9 +179,7 @@ def llm(messages,temperature=.2):
        retry_seconds=max(1.0,float(str(retry_delay)[:-1]))
     except Exception: pass
     _llm_set_cooldown(retry_seconds)
-    last_error=RuntimeError('AI provider HTTP 429: request quota/rate limit reached. GENESIS has paused provider calls and will retry after the cooldown. Check Google AI Studio usage if this continues.')
-    if attempt < 2:
-     continue
+    last_error=RuntimeError('AI provider HTTP 429: request quota/rate limit reached. GENESIS paused this request instead of making you wait through repeated retries. Try again after the provider quota resets, or check the provider usage page.')
     raise last_error
    if r.status_code == 409 or r.status_code >= 500:
     detail=(r.text or '')[:500]
@@ -239,6 +239,10 @@ def parse_json(s):
   except Exception:
    continue
  raise ValueError('Model response was not valid JSON after safe formatting recovery; retry the task.')
+def update_task_progress(task_id, message):
+ with db() as c:
+  c.execute("UPDATE tasks SET progress=?,updated_at=? WHERE id=? AND status IN ('queued','running')",(str(message)[:240],now(),task_id))
+
 def create_task(title,description,agent='coordinator',task_id=None,status='queued',result=''):
  tid = task_id or str(uuid.uuid4())
  stamp = now()
@@ -448,6 +452,7 @@ def _validate_generated_files(workspace, created):
  return checks
 
 def build(task):
+ update_task_progress(task['id'],'Preparing your request and selecting the right deliverable…')
  workspace=pathlib.Path(get_setting('workspace','workspace')).resolve()
  workspace.mkdir(parents=True,exist_ok=True)
  prompt=f'''Complete the user's actual request, not just a software-building interpretation. Infer the best deliverable from the message:
@@ -462,6 +467,7 @@ def build(task):
 - For study-video/lesson requests, the dedicated lesson generator handles those.
 Return valid JSON only with keys: kind (answer|writing|plan|research|analysis|software|other), title, answer (complete useful response in text), summary (short result summary), files (array of {{path,content}}; may be empty for text-only requests), tests (array), limitations (array).
 Rules: do not ask follow-up questions unless essential; make sensible safe assumptions. If the user requests files, create up to 8 text files, each <=10000 chars. File paths must be relative and must not contain .. or be absolute. No secrets, malware, exploit code, hidden tracking/network behavior, destructive commands, shell scripts, or unsafe execution. Do not claim external research, tests, messages, purchases, or deployments occurred unless actually performed. If the request requires an external account, access, payment, physical-world action, or unavailable integration, explain the limitation and still complete the useful portion. For medical/legal/financial high-impact topics, provide general information and appropriate cautions. For an internal company task whose title begins [AUTO], act like a product team: when the evidence supports building, create a small genuinely usable mobile-friendly MVP plus a README, product brief, landing-page copy, pricing hypotheses, customer-validation plan, and FAQ within the 8-file limit. Prefer a self-contained HTML/CSS/JS prototype when suitable. Include basic accessibility and clear setup instructions. Never include analytics or hidden tracking by default. Do not publish the product, contact customers, accept payments, create accounts, or spend money; prepare launch materials for review only. If evidence is weak, create a validation pack rather than pretending the product is ready. User request title: {task['title']}\nFull request: {task['description']}'''
+ update_task_progress(task['id'],'Generating your answer and files with the AI provider…')
  out=parse_json(llm([{'role':'system','content':'You are GENESIS, a reliable general-purpose task executor. You must understand and fulfil the specific user intent. You can answer questions, draft text, make plans, analyse supplied information, and generate safe digital prototypes. Be useful, honest about limits, concise but complete. Return valid JSON only.'},{'role':'user','content':prompt}],.15))
  answer=str(out.get('answer','')).strip()
  summary=str(out.get('summary','')).strip() or answer[:500]
@@ -469,6 +475,7 @@ Rules: do not ask follow-up questions unless essential; make sensible safe assum
  files=out.get('files') if isinstance(out.get('files'),list) else []
  # Text-only tasks are valid completed work and do not need artificial project files.
  if files:
+  update_task_progress(task['id'],'Saving your generated files and checking their structure…')
   dest=(workspace/slugify(str(out.get('title') or task['title'])+'-'+task['id'][:8])).resolve()
   if workspace not in dest.parents: raise RuntimeError('Unsafe project path')
   dest.mkdir(parents=True,exist_ok=True)
@@ -481,6 +488,7 @@ Rules: do not ask follow-up questions unless essential; make sensible safe assum
    target.parent.mkdir(parents=True,exist_ok=True)
    target.write_text(file_content,encoding='utf-8')
    created.append(str(target.relative_to(workspace)))
+ update_task_progress(task['id'],'Running local file and syntax checks…')
  checks=_validate_generated_files(workspace, created)
  result={'kind':str(out.get('kind','other')),'answer':answer,'summary':summary,'files':created,'checks':checks,'suggested_tests':out.get('tests',[]),'limitations':out.get('limitations',[])}
  if created:
@@ -613,11 +621,12 @@ def process(task):
   if not claimed: return
   
   is_video=bool(re.search(r'\b(video|study video|lesson video|educational video|animation)\b', task['title']+' '+task['description'], re.I))
+  update_task_progress(task['id'],'Starting the lesson generator…' if is_video else 'Starting the task generator…')
   result=(build_study_video(task) if is_video else build(task)) if task['agent']=='builder' else {'message':'Only builder tasks are currently executable; create a builder task.'}
-  with db() as c: c.execute("UPDATE tasks SET status='completed',result=?,updated_at=? WHERE id=?",(json.dumps(result,ensure_ascii=False),now(),task['id']))
+  with db() as c: c.execute("UPDATE tasks SET status='completed',result=?,progress=?,updated_at=? WHERE id=?",(json.dumps(result,ensure_ascii=False),'Completed',now(),task['id']))
  except Exception as e:
   log(f'Task failed: {task["title"]}: {e}','ERROR')
-  with db() as c: c.execute("UPDATE tasks SET status='failed',error=?,updated_at=? WHERE id=?",(str(e)[:1800],now(),task['id']))
+  with db() as c: c.execute("UPDATE tasks SET status='failed',error=?,progress=?,updated_at=? WHERE id=?",(str(e)[:1800],'Stopped — see error message',now(),task['id']))
 
 def process_task_id(task_id):
  with db() as c:
@@ -803,7 +812,7 @@ function toggleVoice(){if(!SpeechRec){voiceUnavailable();return}if(listening){re
 async function api(path,method='GET',body=null){const r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch(e){}if(!r.ok)throw Error(d.detail||'Request failed. Please try again.');return d}
 async function submitRequest(){const title=$('request').value.trim();if(!title){$('request').focus();return}if(listening&&recognition)recognition.stop();if(pollTimer)clearTimeout(pollTimer);$('go').disabled=true;$('go').textContent='Working…';$('statusTitle').textContent='GENESIS is starting your request';$('statusText').textContent='Connecting to the task worker…';$('progress').classList.remove('hidden');$('statusText').className='muted';$('pulse').classList.remove('hidden');showWork();try{const d=await api('/api/tasks','POST',{title,description:'',agent:'builder'});activeTask=d.id;sessionStorage.setItem('genesis_active_task',d.id);sessionStorage.setItem('genesis_active_title',title);$('statusText').textContent='Request accepted. Your result will appear below automatically.';poll(d.id,0,Date.now())}catch(e){if(/sign in|session expired|please sign in/i.test(e.message)){sessionStorage.setItem('genesis_pending_request',title);location.href='/account?return=%2F';return}fail(e.message)}}
 function fail(msg){$('pulse').classList.add('hidden');$('statusTitle').textContent='Could not complete this request';$('statusText').textContent=msg;$('statusText').className='error';$('progress').classList.add('hidden');$('go').disabled=false;$('go').textContent='Try again ↗';sessionStorage.removeItem('genesis_active_task')}
-async function poll(id,n,startedAt){try{const t=await api('/api/tasks/'+id);if(t.status==='completed'){renderResult(t);return}if(t.status==='failed'){fail(t.error||'The AI service could not complete this request.');return}const elapsed=Math.floor((Date.now()-(startedAt||Date.now()))/1000);$('statusTitle').textContent=t.status==='running'?'GENESIS is creating your deliverable':'GENESIS request is queued';$('statusText').textContent=t.status==='running'?(elapsed>90?'Still working. GENESIS is taking longer than usual; this page will keep checking and show the result here as soon as it is ready.':'Creating your deliverable… '+elapsed+'s elapsed'):'Waiting for a worker to start this request…';$('progress').classList.remove('hidden');$('pulse').classList.remove('hidden')}catch(e){$('statusText').textContent='Temporarily unable to check the task. Reconnecting automatically…'}pollTimer=setTimeout(()=>poll(id,n+1,startedAt),n<20?1400:3500)}
+async function poll(id,n,startedAt){try{const t=await api('/api/tasks/'+id);if(t.status==='completed'){renderResult(t);return}if(t.status==='failed'){fail(t.error||'The AI service could not complete this request.');return}const elapsed=Math.floor((Date.now()-(startedAt||Date.now()))/1000);$('statusTitle').textContent=t.status==='running'?'GENESIS is creating your deliverable':'GENESIS request is queued';$('statusText').textContent=t.status==='running'?((t.progress||'Creating your deliverable…')+' '+elapsed+'s elapsed'):(t.progress||'Waiting for a worker to start this request…');$('progress').classList.remove('hidden');$('pulse').classList.remove('hidden')}catch(e){$('statusText').textContent='Temporarily unable to check the task. Reconnecting automatically…'}pollTimer=setTimeout(()=>poll(id,n+1,startedAt),n<20?1400:3500)}
 function renderResult(t){let r={};try{r=JSON.parse(t.result||'{}')}catch(e){r={answer:String(t.result||'').trim()}}if(!r||typeof r!=='object')r={answer:String(r)};lastAnswer=String(r.answer||r.summary||r.message||'Your request is complete.');if(!lastAnswer.trim()&&r.files?.length)lastAnswer='Your files have been created. Open them below to view your deliverable.';if(!lastAnswer.trim())lastAnswer='GENESIS completed the task but returned no readable answer. Raw result: '+String(t.result||'No result data was saved.');$('pulse').classList.add('hidden');$('statusTitle').textContent='Your result is ready';$('statusText').textContent='Completed — your output is displayed below.';$('statusText').className='muted';$('progress').classList.add('hidden');$('result').classList.remove('hidden');$('resultTitle').textContent=r.name||r.title||t.title||'Your result';$('resultText').textContent=lastAnswer;let links='',files=Array.isArray(r.files)?r.files:[],htmlFile=files.find(x=>String(x).toLowerCase().endsWith('.html'));if(r.path&&htmlFile){let rel=String(htmlFile).split('/').map(encodeURIComponent).join('/');let href='/workspace-files/'+rel;links+='<a href="'+href+'" target="_blank" rel="noopener">Open full website ↗</a>';$('preview').src=href;$('preview').classList.remove('hidden')}else{$('preview').classList.add('hidden');$('preview').removeAttribute('src')}if(r.youtube_search_url)links+='<a href="'+escAttr(r.youtube_search_url)+'" target="_blank" rel="noopener">Related YouTube videos ↗</a>';if(r.mp4_url)links+='<a href="'+escAttr(r.mp4_url)+'" target="_blank" rel="noopener">Open video ↗</a>';if(r.path&&files.length){let folder=String(r.path).split('/').map(encodeURIComponent).join('/');links+='<a href="/workspace-files/'+folder+'/README.md" target="_blank" rel="noopener">Project guide</a>'}$('resultLinks').innerHTML=links;$('fileList').innerHTML=files.map(f=>{let href='/workspace-files/'+String(f).split('/').map(encodeURIComponent).join('/');return '<a href="'+href+'" target="_blank" rel="noopener">↗ '+esc(f.split('/').pop())+'</a>'}).join('');$('go').disabled=false;$('go').textContent='Create another ↗';sessionStorage.removeItem('genesis_active_task');sessionStorage.removeItem('genesis_active_title');$('result').scrollIntoView({behavior:'smooth',block:'start'})}
 function esc(s){let d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML}function escAttr(s){return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
 function readResult(){if(!('speechSynthesis'in window)){ $('readBtn').textContent='Audio unavailable';return}if(speechSynthesis.speaking){speechSynthesis.cancel();$('readBtn').textContent='🔊 Read aloud';return}let text=lastAnswer;if(!text)return;let u=new SpeechSynthesisUtterance(text);u.lang=navigator.language||'en-IN';u.rate=1;u.onend=()=>{$('readBtn').textContent='🔊 Read aloud'};$('readBtn').textContent='■ Stop reading';speechSynthesis.speak(u)}
