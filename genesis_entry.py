@@ -91,6 +91,10 @@ def ai_self_test(x_genesis_key: str | None = Header(default=None)):
                 "secret_values_exposed": False}
 
 
+@app.get('/learn')
+def learning_adventure_page():
+    return HTMLResponse((BASE_DIR / 'education.html').read_text(encoding='utf-8'))
+
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_PATH = BASE_DIR / "console.html"
 
