@@ -30,7 +30,6 @@ async def security_headers(request, call_next):
  response.headers.setdefault("X-Frame-Options", "DENY")
  response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
  response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
- response.headers.setdefault("Content-Security-Policy", "default-src * data: blob:; script-src * data: blob: 'unsafe-inline'; style-src * data: 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
  if request.url.scheme == "https":
   response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
  return response
