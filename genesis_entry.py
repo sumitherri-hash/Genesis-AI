@@ -132,6 +132,11 @@ def neural_lab_page():
     from fastapi.responses import HTMLResponse
     return HTMLResponse((BASE_DIR / 'neural_lab.html').read_text(encoding='utf-8'))
 
+@app.get('/accessibility')
+def accessibility_page():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse((BASE_DIR / 'accessibility.html').read_text(encoding='utf-8'))
+
 @app.get('/account')
 def account_page():
     from fastapi.responses import HTMLResponse
