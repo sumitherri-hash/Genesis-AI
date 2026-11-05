@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import requests
+import trust_safety
 
 load_dotenv()
 APP_NAME = 'GENESIS AI'
@@ -22,6 +23,17 @@ LLM_MODEL = os.getenv('LLM_MODEL', 'gemini-3.8-flash')
 POLL_SECONDS = max(30, int(os.getenv('POLL_SECONDS', '90')))
 MAX_TASKS_PER_CYCLE = max(1, min(5, int(os.getenv('MAX_TASKS_PER_CYCLE', '2'))))
 app = FastAPI(title=APP_NAME, version='0.8.0')
+@app.middleware("http")
+async def security_headers(request, call_next):
+ response = await call_next(request)
+ response.headers.setdefault("X-Content-Type-Options", "nosniff")
+ response.headers.setdefault("X-Frame-Options", "DENY")
+ response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+ response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+ response.headers.setdefault("Content-Security-Policy", "default-src 'self' https: data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+ if request.url.scheme == "https":
+  response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+ return response
 # Lightweight in-memory public request limit. For production, use a shared rate limiter.
 PUBLIC_REQUESTS = {}
 PUBLIC_LIMIT = 5
@@ -696,6 +708,9 @@ def add_task(data:TaskIn,background_tasks:BackgroundTasks,request:Request):
   raise HTTPException(429, 'You have reached the temporary request limit. Please try again later.')
  title=data.title.strip()
  if not title: raise HTTPException(400,'Type a short request, for example: Create a study video for Grade 9 on motion.')
+ moderation = trust_safety.check_submission(user_id, title + '\\n' + data.description.strip())
+ if not moderation['allowed']:
+  raise HTTPException(403, moderation['message'])
  description=data.description.strip() or ('Interpret this short request using sensible defaults. Do not ask follow-up questions unless essential. Use only information provided for this task; do not read personal phone data. Request: '+title)
  agent='builder' if data.agent=='builder' else 'builder'
  PUBLIC_REQUESTS[client_ip] = recent + [current]
