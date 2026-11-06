@@ -92,7 +92,11 @@ def ai_self_test(x_genesis_key: str | None = Header(default=None)):
 
 
 
-@app.get('/security')\ndef security_center_page():\n    return HTMLResponse((BASE_DIR / 'security_center.html').read_text(encoding='utf-8'))\n\n@app.get('/integrations')
+@app.get('/security')
+def security_center_page():
+    return HTMLResponse((BASE_DIR / 'security_center.html').read_text(encoding='utf-8'))
+
+@app.get('/integrations')
 def integrations_page():
     return HTMLResponse((BASE_DIR / 'integrations.html').read_text(encoding='utf-8'))
 
