@@ -278,7 +278,7 @@ def install(app):
                              {"id":"windsor","name":"Windsor.ai","apps":["Windsor.ai"],"status":"coming_soon"},
                              {"id":"vehicleq","name":"VehicleQ","apps":["VehicleQ"],"status":"api_verification_required"}]}
 
-    @app.post("/api/user/integrations/google/connect")
+    @app.get("/api/user/integrations/google/connect")
     def google_connect(request: Request):
         _origin_check(request)
         user = _session_user(request)
