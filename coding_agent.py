@@ -4,7 +4,7 @@ The agent can inspect and edit only its assigned project directory and run a sma
 allowlist of verification commands. It cannot execute arbitrary shell commands,
 read server secrets, access other users' files, or publish/deploy on its own.
 """
-import json, os, pathlib, subprocess, threading, uuid
+import json, os, pathlib, subprocess, threading, uuid, io, zipfile
 from datetime import datetime, timezone
 from fastapi import Header, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field
@@ -159,6 +159,31 @@ def install(app):
   root=_project(task_id); target=_safe_path(root,relative_path)
   if not target.is_file(): raise HTTPException(404,"Project file not found")
   return FileResponse(target,filename=target.name)
+
+
+ @app.get("/api/coding/tasks/{task_id}/download")
+ def coding_task_download(task_id:str,request:Request):
+  from fastapi.responses import StreamingResponse
+  try: user=core._request_user_or_admin(request)
+  except Exception: raise HTTPException(401,"Sign in is required.")
+  with core.db() as conn:
+   owner=conn.execute("SELECT user_id FROM user_task_owners WHERE task_id=?",(task_id,)).fetchone()
+   row=conn.execute("SELECT id FROM tasks WHERE id=? AND agent='coding'",(task_id,)).fetchone()
+  if not row or (owner and owner["user_id"]!=user) or (not owner and user): raise HTTPException(404,"Task not found")
+  root=_project(task_id); archive=io.BytesIO(); total=0; count=0
+  blocked={".git",".venv","__pycache__","node_modules"}
+  with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as z:
+   for item in sorted(root.rglob("*")):
+    if not item.is_file() or item.is_symlink(): continue
+    rel=item.relative_to(root)
+    if any(part in blocked for part in rel.parts): continue
+    if item.suffix.lower() in {".env",".pem",".key"} or item.name.lower() in {"secrets.json","credentials.json"}: continue
+    size=item.stat().st_size
+    if size>MAX_FILE_BYTES or total+size>8_000_000: continue
+    z.write(item,arcname=str(rel)); total+=size; count+=1
+  if not count: raise HTTPException(404,"No exportable project files found.")
+  archive.seek(0)
+  return StreamingResponse(archive,media_type="application/zip",headers={"Content-Disposition":f'attachment; filename="genesis-project-{task_id[:8]}.zip"'})
 
 def _run_task(task_id,title,description):
  with LOCK:
