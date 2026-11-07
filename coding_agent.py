@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 import requests
 import app as core
 
-ROOT = pathlib.Path(core.get_setting("workspace", "workspace")).resolve() / "coding_projects"
+def _root():
+ return pathlib.Path(core.get_setting("workspace", "workspace")).resolve() / "coding_projects"
 MAX_FILE_BYTES = 180_000
 MAX_STEPS = max(4, min(16, int(os.getenv("CODING_AGENT_MAX_STEPS", "12"))))
 LOCK = threading.Lock()
@@ -25,9 +26,10 @@ TOOLS = [
 ]
 
 def _project(task_id):
- ROOT.mkdir(parents=True, exist_ok=True)
- p=(ROOT / task_id).resolve()
- if ROOT not in p.parents: raise ValueError("Invalid project path")
+ root=_root()
+ root.mkdir(parents=True, exist_ok=True)
+ p=(root / task_id).resolve()
+ if root not in p.parents: raise ValueError("Invalid project path")
  p.mkdir(parents=True, exist_ok=True)
  return p
 
@@ -115,7 +117,7 @@ def run(task_id, title, description):
  if not completed:
   result_text="Step limit reached. The project files are saved, but the agent did not produce a final completion report. Review the files and rerun verification."
  files=[str(p.relative_to(root)) for p in root.rglob("*") if p.is_file() and not any(x in {".git","__pycache__"} for x in p.parts)]
- return {"status":"completed" if completed else "needs_review","report":result_text,"project_path":str(root.relative_to(ROOT.parent)),"files":files,"steps_used":step+1,"tool_policy":"project-scoped files and allowlisted checks only"}
+ return {"status":"completed" if completed else "needs_review","report":result_text,"project_path":str(root.relative_to(_root().parent)),"files":files,"steps_used":step+1,"tool_policy":"project-scoped files and allowlisted checks only"}
 
 class CodingRequest(BaseModel):
  title:str=Field(min_length=2,max_length=160)
