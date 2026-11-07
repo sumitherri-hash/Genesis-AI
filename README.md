@@ -65,7 +65,9 @@ The software can work without the dashboard open, but a process cannot run after
 - Passwords are stored as PBKDF2-HMAC-SHA256 hashes, not plaintext.
 - Sessions use random opaque tokens stored as SHA-256 hashes in an HttpOnly, Secure (HTTPS), SameSite=Lax cookie.
 - Customer task creation and task retrieval require a signed-in account. A task is associated with its owner; other accounts cannot retrieve it by task ID.
-- Google OAuth uses per-user consent, PKCE, a short-lived single-use state value, verified Google identity, and read-only Gmail, Calendar, Drive metadata and YouTube scopes.
+- Email/password remains available. Google, GitHub, Apple and Microsoft social sign-in now have separate OAuth/OIDC login routes with short-lived one-use state, provider identity verification, and provider-subject identity records.
+- Social sign-in never auto-links an existing account merely because the email matches. A customer must first sign in using the existing method; account linking is a separate authenticated action and is not silently performed.
+- Google account connection remains a separate optional feature with per-user consent, PKCE, a short-lived single-use state value, verified Google identity, and read-only Gmail, Calendar, Drive metadata and YouTube scopes.
 - OAuth tokens are encrypted at rest with AES-256-GCM using `GENESIS_TOKEN_ENCRYPTION_KEY`. Render Blueprint generates this secret.
 - Refresh tokens are refreshed server-side. Tokens are never returned to browser JavaScript. Users can disconnect Google from `/account`.
 - Internal agent adapters can obtain a user's access token by calling `auth_hub.google_access_token_for_user(user_id)`; an agent must be explicitly given the correct user ID and must still obey the user's granted scopes.
@@ -74,7 +76,7 @@ The software can work without the dashboard open, but a process cannot run after
 
 1. In Google Cloud Console, create a project and configure the OAuth consent screen.
 2. Create an OAuth 2.0 Web application client.
-3. Add this exact authorised redirect URI: `https://genesis-ai-srdo.onrender.com/auth/google/callback`.
+3. Add both authorised redirect URIs: `https://genesis-ai-srdo.onrender.com/auth/google/callback` (Google app connection) and `https://genesis-ai-srdo.onrender.com/auth/login/google/callback` (Google sign-in).
 4. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to the Render service environment. Never place these in the repository or browser.
 5. Google may classify Gmail read-only access as a sensitive/restricted scope and require verification. During testing, add only approved test users. Do not claim public OAuth approval until Google grants it.
 
@@ -82,7 +84,13 @@ The software can work without the dashboard open, but a process cannot run after
 
 - Render Free uses ephemeral local storage. The SQLite account/session/OAuth database can be lost on redeploy or restart. Before real customers connect accounts, migrate all account, session, task-owner, audit and integration records to managed persistent PostgreSQL with backups and connection pooling.
 - Configure verified-email delivery, account recovery, MFA, monitoring, stronger shared rate limiting, security review and retention/deletion workflows.
-- Google OAuth credentials and Google consent-screen approval are still administrator setup tasks. Other providers are catalogue-only and remain marked Coming Soon until their official OAuth/API adapters, provider credentials and reviews are completed.
+- Provider login code is implemented, but it becomes usable only after each provider's credentials and exact callback URLs are configured. The account page checks server configuration and disables unconfigured buttons.
+- GitHub callback: `https://genesis-ai-srdo.onrender.com/auth/login/github/callback`.
+- Microsoft callback: `https://genesis-ai-srdo.onrender.com/auth/login/microsoft/callback`. Configure a Web platform app registration and the correct tenant/audience.
+- Apple callback: `https://genesis-ai-srdo.onrender.com/auth/login/apple/callback`. Configure a Sign in with Apple Services ID, domain/return URL, Team ID, Key ID and private key. Apple sends a form_post callback.
+- Render environment variables: `GITHUB_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`, `MICROSOFT_TENANT_ID`, and `APPLE_CLIENT_ID/TEAM_ID/KEY_ID/PRIVATE_KEY`. Google sign-in can use `GOOGLE_LOGIN_CLIENT_ID/SECRET` or reuse `GOOGLE_CLIENT_ID/SECRET`.
+- Microsoft sign-in deliberately requires an explicit verified email claim; some Microsoft tenant configurations may not emit it, in which case GENESIS refuses account creation rather than trusting an unverified address.
+- Google OAuth credentials and provider consent/review are administrator setup tasks. Implemented routes are not proof of successful provider authorization until each provider app and callback is configured and tested.
 - Google Maps generally uses a separate Maps Platform API key/billing model, not this Google user OAuth consent. VehicleQ support must be confirmed with its provider.
 - This beta account system is not a claim of complete production multi-tenant certification. Do not store sensitive personal, financial, health or children's data.
 
