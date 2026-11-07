@@ -92,7 +92,11 @@ def run(task_id, title, description):
  result_text=""; completed=False
  for step in range(MAX_STEPS):
   payload={"model":core.LLM_MODEL,"messages":messages,"tools":TOOLS,"tool_choice":"auto","temperature":0.15}
+  core._llm_wait_for_slot()
   r=requests.post(core.LLM_BASE_URL+"/chat/completions",headers={"Authorization":"Bearer "+core.LLM_API_KEY,"Content-Type":"application/json"},json=payload,timeout=70)
+  if r.status_code==429:
+   core._llm_set_cooldown(60)
+   raise RuntimeError("AI provider rate limit reached. Wait before retrying.")
   if r.status_code>=400: raise RuntimeError("AI provider error "+str(r.status_code)+": "+r.text[:500])
   msg=r.json()["choices"][0]["message"]
   messages.append(msg)
@@ -146,6 +150,19 @@ def install(app):
   try: result=json.loads(row["result"] or "{}")
   except Exception: pass
   return {"id":task_id,"status":row["status"],"progress":row["progress"],"error":row["error"],"result":result}
+
+ @app.get("/api/coding/tasks/{task_id}/files/{relative_path:path}")
+ def coding_task_file(task_id:str,relative_path:str,request:Request):
+  from fastapi.responses import FileResponse
+  try: user=core._request_user_or_admin(request)
+  except Exception: raise HTTPException(401,"Sign in is required.")
+  with core.db() as c:
+   owner=c.execute("SELECT user_id FROM user_task_owners WHERE task_id=?",(task_id,)).fetchone()
+   row=c.execute("SELECT id FROM tasks WHERE id=? AND agent='coding'",(task_id,)).fetchone()
+  if not row or (owner and owner["user_id"]!=user) or (not owner and user): raise HTTPException(404,"Task not found")
+  root=_project(task_id); target=_safe_path(root,relative_path)
+  if not target.is_file(): raise HTTPException(404,"Project file not found")
+  return FileResponse(target,filename=target.name)
 
 def _run_task(task_id,title,description):
  with LOCK:
