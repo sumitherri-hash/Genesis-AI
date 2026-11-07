@@ -376,8 +376,6 @@ def install(app):
                                 issuer=["https://accounts.google.com","accounts.google.com"])
             if claims.get("nonce") != state_row["nonce"]:
                 raise HTTPException(403, "Google sign-in nonce did not match.")
-            if claims.get("nonce") != state_row["nonce"]:
-                raise HTTPException(403, "Microsoft sign-in nonce did not match.")
             verified = claims.get("email_verified") is True
             return claims.get("sub"), claims.get("email"), verified
         if provider == "microsoft":
@@ -393,6 +391,8 @@ def install(app):
             expected_issuer = "https://login.microsoftonline.com/"+tid+"/v2.0"
             if claims.get("iss","").rstrip("/").lower() != expected_issuer.lower():
                 raise HTTPException(403, "Microsoft identity issuer did not match.")
+            if claims.get("nonce") != state_row["nonce"]:
+                raise HTTPException(403, "Microsoft sign-in nonce did not match.")
             verified = claims.get("email_verified") is True
             return claims.get("sub"), claims.get("email"), verified
         # Apple signs with RS256 and publishes rotating signing keys.
