@@ -27,6 +27,29 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Social sign-in credentials; leave unset until the matching provider app is configured.
+      - key: GOOGLE_LOGIN_CLIENT_ID
+        sync: false
+      - key: GOOGLE_LOGIN_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        value: common
+      - key: APPLE_CLIENT_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
       # Begin the first evidence-led discovery cycle on deployment, once only.
       - key: GENESIS_AUTOPILOT_BOOTSTRAP
         value: "true"
