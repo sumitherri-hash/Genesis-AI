@@ -93,6 +93,10 @@ def ai_self_test(x_genesis_key: str | None = Header(default=None)):
 
 
 
+@app.get('/code')
+def coding_workspace_page():
+    return HTMLResponse((BASE_DIR / 'coding.html').read_text(encoding='utf-8'))
+
 @app.get('/security')
 def security_center_page():
     return HTMLResponse((BASE_DIR / 'security_center.html').read_text(encoding='utf-8'))
