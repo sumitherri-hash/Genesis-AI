@@ -57,6 +57,16 @@ def _init():
           expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
           FOREIGN KEY(user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS oauth_login_states(
+          state_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, nonce TEXT NOT NULL,
+          verifier TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_identities(
+          provider TEXT NOT NULL, provider_subject TEXT NOT NULL, user_id TEXT NOT NULL,
+          provider_email TEXT NOT NULL, created_at TEXT NOT NULL,
+          PRIMARY KEY(provider, provider_subject),
+          FOREIGN KEY(user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS user_integrations(
           id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT NOT NULL,
           provider_subject TEXT NOT NULL, provider_email TEXT NOT NULL,
@@ -195,6 +205,259 @@ def google_access_token_for_user(user_id):
     return tokens["access_token"]
 
 def install(app):
+
+    # Social sign-in uses a separate one-time OAuth state table. Provider identity
+    # is matched by immutable provider subject, never by an unverified email alone.
+    import jwt
+
+    def _social_config(provider):
+        names = {
+            "google": ("GOOGLE_LOGIN_CLIENT_ID", "GOOGLE_LOGIN_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
+            "github": ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
+            "microsoft": ("MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"),
+            "apple": ("APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_PRIVATE_KEY"),
+        }
+        keys = names[provider]
+        values = [os.getenv(k, "").strip() for k in keys]
+        if provider == "google":
+            values = [values[0] or values[2], values[1] or values[3]]
+        return values if all(values) else None
+
+    def _social_providers():
+        return {p: bool(_social_config(p)) for p in ("google", "github", "apple", "microsoft")}
+
+    def _new_social_state(provider):
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        verifier = secrets.token_urlsafe(64)
+        stamp = _iso(_now())
+        with _db() as c:
+            c.execute("DELETE FROM oauth_login_states WHERE expires_at<?", (stamp,))
+            c.execute("INSERT INTO oauth_login_states(state_hash,provider,nonce,verifier,expires_at,created_at) VALUES(?,?,?,?,?,?)",
+                      (hashlib.sha256(state.encode()).hexdigest(), provider, nonce, verifier,
+                       _iso(_now()+timedelta(minutes=10)), stamp))
+        return state, nonce, verifier
+
+    def _take_social_state(provider, state):
+        if not state:
+            raise HTTPException(400, "Missing sign-in state. Start again.")
+        digest = hashlib.sha256(state.encode()).hexdigest()
+        with _db() as c:
+            row = c.execute("SELECT * FROM oauth_login_states WHERE state_hash=? AND provider=? AND expires_at>?",
+                            (digest, provider, _iso(_now()))).fetchone()
+            if row:
+                c.execute("DELETE FROM oauth_login_states WHERE state_hash=?", (digest,))
+        if not row:
+            raise HTTPException(400, "Sign-in state is invalid, expired, or already used. Start again.")
+        return dict(row)
+
+    def _create_social_session(provider, subject, email, verified):
+        email = str(email or "").strip().lower()
+        if not subject or not email or not verified:
+            raise HTTPException(403, "The provider did not supply a verified email address. GENESIS did not create an account.")
+        stamp = _iso(_now())
+        with _db() as c:
+            identity = c.execute("SELECT u.id,u.email FROM user_identities i JOIN user_accounts u ON u.id=i.user_id WHERE i.provider=? AND i.provider_subject=? AND u.status='active'",
+                                 (provider, str(subject))).fetchone()
+            if identity:
+                uid, account_email = identity["id"], identity["email"]
+                c.execute("UPDATE user_identities SET provider_email=? WHERE provider=? AND provider_subject=?",
+                          (email, provider, str(subject)))
+            else:
+                existing = c.execute("SELECT id FROM user_accounts WHERE email=? COLLATE NOCASE", (email,)).fetchone()
+                if existing:
+                    raise HTTPException(409, "An account already uses this email. Sign in with its existing method first; do not create a duplicate account.")
+                uid = secrets.token_urlsafe(18)
+                c.execute("INSERT INTO user_accounts(id,email,password_hash,created_at,status) VALUES(?,?,?,?, 'active')",
+                          (uid, email, "", stamp))
+                c.execute("INSERT INTO user_identities(provider,provider_subject,user_id,provider_email,created_at) VALUES(?,?,?,?,?)",
+                          (provider, str(subject), uid, email, stamp))
+                _audit(c, uid, "account_created_social", provider)
+            token = secrets.token_urlsafe(32)
+            c.execute("INSERT INTO user_sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",
+                      (hashlib.sha256(token.encode()).hexdigest(), uid, _iso(_now()+timedelta(seconds=SESSION_SECONDS)), stamp))
+            _audit(c, uid, "social_login", provider)
+        response = RedirectResponse("/account?login=success", status_code=303)
+        _set_session(response, token)
+        return response
+
+    def _pkce(verifier):
+        return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+
+    @app.get("/api/auth/providers")
+    def auth_providers():
+        configured = _social_providers()
+        return {"providers": [
+            {"id":"google","name":"Google","configured":configured["google"],"status":"ready" if configured["google"] else "configuration_required"},
+            {"id":"github","name":"GitHub","configured":configured["github"],"status":"ready" if configured["github"] else "configuration_required"},
+            {"id":"apple","name":"Apple","configured":configured["apple"],"status":"ready" if configured["apple"] else "configuration_required"},
+            {"id":"microsoft","name":"Microsoft","configured":configured["microsoft"],"status":"ready" if configured["microsoft"] else "configuration_required"}
+        ]}
+
+    @app.get("/auth/login/{provider}")
+    def social_login_start(provider: str, request: Request):
+        if provider not in ("google", "github", "apple", "microsoft"):
+            raise HTTPException(404, "Unknown sign-in provider.")
+        config = _social_config(provider)
+        if not config:
+            raise HTTPException(503, provider.title()+" sign-in is not configured by the administrator yet.")
+        _rate_limit(request, "social_"+provider, 12, 900)
+        state, nonce, verifier = _new_social_state(provider)
+        challenge = _pkce(verifier)
+        if provider == "google":
+            cid, secret = config
+            params = {"client_id":cid,"redirect_uri":BASE_URL+"/auth/login/google/callback","response_type":"code",
+                      "scope":"openid email profile","state":state,"nonce":nonce,"code_challenge":challenge,
+                      "code_challenge_method":"S256","prompt":"select_account"}
+            target = "https://accounts.google.com/o/oauth2/v2/auth?"+urllib.parse.urlencode(params)
+        elif provider == "github":
+            cid, secret = config
+            params = {"client_id":cid,"redirect_uri":BASE_URL+"/auth/login/github/callback",
+                      "scope":"read:user user:email","state":state}
+            target = "https://github.com/login/oauth/authorize?"+urllib.parse.urlencode(params)
+        elif provider == "microsoft":
+            cid, secret = config
+            tenant = os.getenv("MICROSOFT_TENANT_ID", "common").strip() or "common"
+            params = {"client_id":cid,"redirect_uri":BASE_URL+"/auth/login/microsoft/callback","response_type":"code",
+                      "response_mode":"query","scope":"openid email profile","state":state,"nonce":nonce,
+                      "code_challenge":challenge,"code_challenge_method":"S256"}
+            target = "https://login.microsoftonline.com/"+urllib.parse.quote(tenant)+"/oauth2/v2.0/authorize?"+urllib.parse.urlencode(params)
+        else:
+            cid, team, key_id, private_key = config
+            params = {"client_id":cid,"redirect_uri":BASE_URL+"/auth/login/apple/callback","response_type":"code",
+                      "response_mode":"form_post","scope":"name email","state":state,"nonce":nonce}
+            target = "https://appleid.apple.com/auth/authorize?"+urllib.parse.urlencode(params)
+        return RedirectResponse(target, status_code=303)
+
+    def _exchange(provider, code, state_row):
+        config = _social_config(provider)
+        if not config:
+            raise HTTPException(503, provider.title()+" sign-in is not configured.")
+        if provider == "google":
+            cid, secret = config
+            endpoint = "https://oauth2.googleapis.com/token"
+            data = {"code":code,"client_id":cid,"client_secret":secret,"redirect_uri":BASE_URL+"/auth/login/google/callback",
+                    "grant_type":"authorization_code","code_verifier":state_row["verifier"]}
+        elif provider == "github":
+            cid, secret = config
+            endpoint = "https://github.com/login/oauth/access_token"
+            data = {"code":code,"client_id":cid,"client_secret":secret,"redirect_uri":BASE_URL+"/auth/login/github/callback"}
+        elif provider == "microsoft":
+            cid, secret = config
+            tenant = os.getenv("MICROSOFT_TENANT_ID", "common").strip() or "common"
+            endpoint = "https://login.microsoftonline.com/"+urllib.parse.quote(tenant)+"/oauth2/v2.0/token"
+            data = {"code":code,"client_id":cid,"client_secret":secret,"redirect_uri":BASE_URL+"/auth/login/microsoft/callback",
+                    "grant_type":"authorization_code","scope":"openid email profile","code_verifier":state_row["verifier"]}
+        else:
+            cid, team, key_id, private_key = config
+            client_secret = jwt.encode({"iss":team,"iat":int(time.time()),"exp":int(time.time())+300,
+                                        "aud":"https://appleid.apple.com","sub":cid},
+                                       private_key.replace("\\n","\n"), algorithm="ES256",
+                                       headers={"kid":key_id})
+            endpoint = "https://appleid.apple.com/auth/token"
+            data = {"code":code,"client_id":cid,"client_secret":client_secret,
+                    "redirect_uri":BASE_URL+"/auth/login/apple/callback","grant_type":"authorization_code"}
+        try:
+            response = requests.post(endpoint, data=data, headers={"Accept":"application/json"}, timeout=20)
+        except requests.RequestException:
+            raise HTTPException(502, provider.title()+" token service could not be reached.")
+        if not response.ok:
+            raise HTTPException(502, provider.title()+" sign-in token exchange failed. Check provider app settings and callback URL.")
+        return response.json()
+
+    def _verify_oidc(provider, token_data, state_row):
+        token = token_data.get("id_token")
+        if not token:
+            raise HTTPException(403, provider.title()+" did not return an identity token.")
+        if provider == "google":
+            jwks = jwt.PyJWKClient("https://www.googleapis.com/oauth2/v3/certs")
+            claims = jwt.decode(token, jwks.get_signing_key_from_jwt(token).key,
+                                algorithms=["RS256"], audience=_social_config("google")[0],
+                                issuer=["https://accounts.google.com","accounts.google.com"])
+            verified = claims.get("email_verified") is True
+            return claims.get("sub"), claims.get("email"), verified
+        if provider == "microsoft":
+            tenant = os.getenv("MICROSOFT_TENANT_ID", "common").strip() or "common"
+            unverified = jwt.decode(token, options={"verify_signature":False,"verify_aud":False,"verify_iss":False})
+            tid = unverified.get("tid", "")
+            if not tid or (tenant != "common" and tid.lower() != tenant.lower()):
+                raise HTTPException(403, "Microsoft tenant identity did not match configuration.")
+            jwks_url = "https://login.microsoftonline.com/"+urllib.parse.quote(tid)+"/discovery/v2.0/keys"
+            jwks = jwt.PyJWKClient(jwks_url)
+            claims = jwt.decode(token, jwks.get_signing_key_from_jwt(token).key, algorithms=["RS256"],
+                                audience=_social_config("microsoft")[0], options={"verify_iss":False})
+            expected_issuer = "https://login.microsoftonline.com/"+tid+"/v2.0"
+            if claims.get("iss","").rstrip("/").lower() != expected_issuer.lower():
+                raise HTTPException(403, "Microsoft identity issuer did not match.")
+            verified = claims.get("email_verified") is True
+            return claims.get("sub"), claims.get("email"), verified
+        # Apple signs with RS256 and publishes rotating signing keys.
+        jwks = jwt.PyJWKClient("https://appleid.apple.com/auth/keys")
+        claims = jwt.decode(token, jwks.get_signing_key_from_jwt(token).key, algorithms=["RS256"],
+                            audience=_social_config("apple")[0], issuer="https://appleid.apple.com")
+        verified_claim = claims.get("email_verified")
+        verified = verified_claim is True or str(verified_claim).lower() == "true"
+        if claims.get("nonce") != state_row["nonce"]:
+            raise HTTPException(403, "Apple sign-in nonce did not match.")
+        return claims.get("sub"), claims.get("email"), verified
+
+    @app.get("/auth/login/google/callback")
+    def google_login_callback(code: str = "", state: str = "", error: str = ""):
+        if error:
+            raise HTTPException(400, "Google sign-in was cancelled or denied.")
+        row = _take_social_state("google", state)
+        if not code:
+            raise HTTPException(400, "Missing Google authorisation code.")
+        tokens = _exchange("google", code, row)
+        subject, email, verified = _verify_oidc("google", tokens, row)
+        return _create_social_session("google", subject, email, verified)
+
+    @app.get("/auth/login/github/callback")
+    def github_login_callback(code: str = "", state: str = "", error: str = ""):
+        if error:
+            raise HTTPException(400, "GitHub sign-in was cancelled or denied.")
+        row = _take_social_state("github", state)
+        if not code:
+            raise HTTPException(400, "Missing GitHub authorisation code.")
+        tokens = _exchange("github", code, row)
+        access = tokens.get("access_token")
+        if not access:
+            raise HTTPException(502, "GitHub did not return an access token.")
+        headers = {"Authorization":"Bearer "+access,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}
+        profile = requests.get("https://api.github.com/user", headers=headers, timeout=15)
+        emails = requests.get("https://api.github.com/user/emails", headers=headers, timeout=15)
+        if not profile.ok or not emails.ok:
+            raise HTTPException(502, "GitHub account identity could not be verified.")
+        verified_email = next((x for x in emails.json() if x.get("primary") and x.get("verified")), None)
+        if not verified_email:
+            raise HTTPException(403, "GitHub must provide a verified primary email for GENESIS sign-in.")
+        return _create_social_session("github", profile.json().get("id"), verified_email.get("email"), True)
+
+    @app.get("/auth/login/microsoft/callback")
+    def microsoft_login_callback(code: str = "", state: str = "", error: str = ""):
+        if error:
+            raise HTTPException(400, "Microsoft sign-in was cancelled or denied.")
+        row = _take_social_state("microsoft", state)
+        if not code:
+            raise HTTPException(400, "Missing Microsoft authorisation code.")
+        tokens = _exchange("microsoft", code, row)
+        subject, email, verified = _verify_oidc("microsoft", tokens, row)
+        return _create_social_session("microsoft", subject, email, verified)
+
+    @app.post("/auth/login/apple/callback")
+    async def apple_login_callback(request: Request):
+        form = await request.form()
+        state = str(form.get("state", ""))
+        code = str(form.get("code", ""))
+        if form.get("error"):
+            raise HTTPException(400, "Apple sign-in was cancelled or denied.")
+        row = _take_social_state("apple", state)
+        if not code:
+            raise HTTPException(400, "Missing Apple authorisation code.")
+        tokens = _exchange("apple", code, row)
+        subject, email, verified = _verify_oidc("apple", tokens, row)
+        return _create_social_session("apple", subject, email, verified)
+
     @app.post("/api/auth/register")
     async def register(request: Request):
         _origin_check(request); _rate_limit(request, "register", 5, 3600)
