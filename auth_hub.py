@@ -374,6 +374,10 @@ def install(app):
             claims = jwt.decode(token, jwks.get_signing_key_from_jwt(token).key,
                                 algorithms=["RS256"], audience=_social_config("google")[0],
                                 issuer=["https://accounts.google.com","accounts.google.com"])
+            if claims.get("nonce") != state_row["nonce"]:
+                raise HTTPException(403, "Google sign-in nonce did not match.")
+            if claims.get("nonce") != state_row["nonce"]:
+                raise HTTPException(403, "Microsoft sign-in nonce did not match.")
             verified = claims.get("email_verified") is True
             return claims.get("sub"), claims.get("email"), verified
         if provider == "microsoft":
@@ -446,9 +450,10 @@ def install(app):
 
     @app.post("/auth/login/apple/callback")
     async def apple_login_callback(request: Request):
-        form = await request.form()
-        state = str(form.get("state", ""))
-        code = str(form.get("code", ""))
+        raw_form = (await request.body()).decode("utf-8", errors="replace")
+        form = urllib.parse.parse_qs(raw_form)
+        state = str((form.get("state") or [""])[0])
+        code = str((form.get("code") or [""])[0])
         if form.get("error"):
             raise HTTPException(400, "Apple sign-in was cancelled or denied.")
         row = _take_social_state("apple", state)
