@@ -17,6 +17,7 @@ import neural_models
 import trust_safety
 import media_studio
 import growth_studio
+import coding_agent
 
 
 @app.get("/api/readiness")
@@ -190,6 +191,7 @@ def action_center_page():
 
 media_studio.install(app)
 growth_studio.install(app)
+coding_agent.install(app)
 
 @app.get('/studio')
 def creative_studio_page():
